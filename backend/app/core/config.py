@@ -80,6 +80,15 @@ def _env_float(default: float, *names: str) -> float:
         return default
 
 
+def _env_int(default: int, *names: str) -> int:
+    """Parse an env var as an int, falling back to ``default`` when unset."""
+    raw = _env_or("", *names)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -101,6 +110,19 @@ class Settings:
     emsc_max_lat: float
     emsc_min_lon: float
     emsc_max_lon: float
+    # SGC (Servicio Geológico Colombiano) earthquake trigger poller
+    # (trigger_sgc module). Poller must NOT fetch unless sgc_enabled is truthy,
+    # so the default keeps tests/demo free of any network dependency on
+    # archive.sgc.gov.co. Same Colombia box (+ a lower 4.5 mag floor) as EMSC
+    # for borough consistency; both sources may run and dedup by their own ids.
+    sgc_enabled: bool
+    sgc_url: str
+    sgc_poll_interval_s: int
+    sgc_min_mag: float
+    sgc_min_lat: float
+    sgc_max_lat: float
+    sgc_min_lon: float
+    sgc_max_lon: float
 
 
 settings = Settings(
@@ -119,4 +141,15 @@ settings = Settings(
     emsc_max_lat=_env_float(14.0, "EMSC_MAX_LAT"),
     emsc_min_lon=_env_float(-80.0, "EMSC_MIN_LON"),
     emsc_max_lon=_env_float(-66.0, "EMSC_MAX_LON"),
+    sgc_enabled=_env_bool(False, "SGC_ENABLED"),
+    sgc_url=_env_or(
+        "https://archive.sgc.gov.co/feed/v1.0.1/summary/five_days_all.json",
+        "SGC_URL",
+    ),
+    sgc_poll_interval_s=_env_int(60, "SGC_POLL_INTERVAL_S"),
+    sgc_min_mag=_env_float(4.5, "SGC_MIN_MAG"),
+    sgc_min_lat=_env_float(0.0, "SGC_MIN_LAT"),
+    sgc_max_lat=_env_float(14.0, "SGC_MAX_LAT"),
+    sgc_min_lon=_env_float(-80.0, "SGC_MIN_LON"),
+    sgc_max_lon=_env_float(-66.0, "SGC_MAX_LON"),
 )

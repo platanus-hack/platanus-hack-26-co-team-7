@@ -43,6 +43,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         logger.info("EMSC earthquake trigger listener started (%s)", settings.emsc_url)
 
+    # Optional SGC earthquake trigger poller. Disabled by default
+    # (settings.sgc_enabled is False), so startup stays network-free.
+    sgc_task: asyncio.Task | None = None
+    if settings.sgc_enabled:
+        from app.modules.trigger_sgc import poller as sgc_poller
+
+        sgc_task = asyncio.create_task(
+            sgc_poller.run_sgc_poller(SessionLocal)
+        )
+        logger.info("SGC earthquake trigger poller started (%s)", settings.sgc_url)
+
     yield
 
     if emsc_task is not None:
@@ -52,6 +63,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except asyncio.CancelledError:
             pass
         logger.info("EMSC earthquake trigger listener stopped")
+
+    if sgc_task is not None:
+        sgc_task.cancel()
+        try:
+            await sgc_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("SGC earthquake trigger poller stopped")
 
 
 def create_app() -> FastAPI:
