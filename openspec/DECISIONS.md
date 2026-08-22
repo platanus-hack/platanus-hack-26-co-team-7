@@ -57,6 +57,39 @@ ZIRO no detecta sismos. Usa EMSC / un endpoint propio / un botón manual como tr
 
 Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver diagrama completo en `communication.md`.
 
+### Protocolo v2 — perfil completo, qué viaja y corrección de tamaño (2026-08-22)
+
+Decisiones cerradas con el equipo móvil (funcionalidad offline). Cambian el telegrama de la v1; ver schema en `protocol.md`.
+
+**1. Perfil completo en onboarding (tabla `profile` del teléfono):** `user_id`, `full_name`, `doc_type` (CC|TI|CE|PA|NIT), `doc_number`, `birth_date` (la edad se DERIVA, no se guarda), `blood_type` + `blood_rh` separados (O- es donante universal, O+ no), `allergies[]`, `chronic_conditions[]`, `medications[]`, `disability` (NONE|MOBILITY|VISUAL|HEARING|COGNITIVE), `is_pregnant`, `weight_kg`, `eps`, `emergency_contacts[{name, phone, relationship}]`, `question_id`, `answer_hash`, `device_secret`.
+
+**2. Criterio de qué VIAJA:** no es "qué es importante" sino *¿qué necesita un rescatista SIN Internet en los próximos 10 minutos?*
+- **VIAJA en claro** (triage offline): name, age, blood+rh, allergies, conditions, medications, disability, pregnant → bloque `vital`.
+- **NO viaja**: doc_type, doc_number, eps, teléfonos de contactos, device_secret → el backend ya los tiene del onboarding y resuelve por `user_id`. Nombre + cédula + sangre + GPS en el SQLite sin cifrar de 8 desconocidos = kit de robo de identidad en tránsito.
+- **`family_contact` sale del telegrama.** El backend notifica a la familia usando los contactos del perfil. No hay razón para que el teléfono de tu papá pase por 8 celulares ajenos.
+
+**3. `device_secret`:** se registra server-side durante el onboarding (canal TLS) para que el backend/gateway pueda verificar el HMAC. Nunca viaja por la mesh ni es expuesto por ningún endpoint.
+
+**4. Corrección honesta de tamaño:** "~120 bytes cabe en una trama BLE" era doctrina, no física. Un advertisement BLE legacy son 31 bytes; Nearby Connections usa BLE solo para discovery y manda datos por Bluetooth Classic/Wi-Fi (`Payload.fromBytes`, límite del orden de KB). Telegrama v2 ≈ **550–700 bytes**, sin problema técnico. Ledger cap 5 MB pasa de ~25.000 a ~7.000 telegramas. **El límite real es privacidad, no ancho de banda.**
+
+**5. Trade-off aceptado:** si alguien nunca completó onboarding con Internet antes del desastre, el backend no tiene su perfil y la notificación familiar falla. Limitación documentada del MVP.
+
+### Dashboard web público adelantado al MVP + módulo web backend (2026-08-22)
+
+La decisión del mismo día que dejaba el dashboard web "post-hackathon" (ver TBD cerrado más abajo) queda **SUPERADA**: se adelanta el dashboard público al MVP porque la sección "para qué sirve" del pitch ante jueces no tiene cara visual sin él. Cambio SDD `dashboard-web` (ver `openspec/changes/dashboard-web/design.md`).
+
+**Decisiones arquitectónicamente significativas de este módulo:**
+
+| Decisión | Lo elegido | Por qué | Lo rechazado |
+|---|---|---|---|
+| **Dashboard en el MVP** | Adelantado a la demo (antes: post-hackathon) | Sin dashboard, heatmap y reportes IA son invisibles para jueces/prensa/rescatistas | Mantenerlo post-hackathon (el pitch pierde su demostración visual) |
+| **Resolución H3 compartida** | **res 8 (~500 m)** como constante con nombre (`backend/app/constants.py` y `frontWeb/src/lib/constants.ts`); fuente única de documentación = esta tabla | Seed y futuro agregador deben coincidir en granularidad; celda ~500 m respeta privacidad (nunca posición individual) | res 9 (~170 m, riesgo de reidentificación), hardcodear el número suelto (inconsistencia garantizada) |
+| **Contrato `reports.content`** | Schema JSON v1 documentado en design.md `{version, title, summary, recommendations[], figures}`; backend pasa tal cual, UI renderiza defensivamente con tipo TS espejo | Sin pipeline LLM real, doble validación runtime es costo puro; un contrato escrito basta para hackathon | pydantic + zod espejados (validación doble sin productor real) |
+| **Broadcast realtime** | WS `/ws` solo-notificación tipada; `ConnectionManager` en proceso; notificación interna por llamada directa (sin HTTP entre módulos) | Cumple la regla no-inter-module-HTTP; WS caído ≠ UI rota (reconciliación REST) | Pub/sub externo tipo Redis (fuera de presupuesto), WS transportando estado |
+| **Limitación monoproceso del seed** | El seed CLI corre en otro proceso y NO notifica por WS; flujo de demo = seed → arrancar servidor → clientes cargan por GET al conectar | Documentar honestamente el alcance; reconciliación inicial vía GET lo cubre | Polling periódico cliente (fuera de spec), seed embebido como único modo |
+
+Lo menor (parámetros exactos de backoff WS, estrategia idempotente del seed, estructura de routers) vive solo en `design.md`.
+
 ### Tabla de decisiones
 
 | Decisión | Lo elegido | Por qué | Lo rechazado |
@@ -65,7 +98,7 @@ Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver dia
 | **Dónde corre Nearby** | **En el APK de cada teléfono** (módulo Kotlin) | El backend no tiene radios. Solo puede recibir JSON por HTTP. | Backend → Nearby → teléfonos (arquitectura imposible, el backend no tiene BT/Wi-Fi Direct) |
 | **Stack móvil** | **React Native (UI/lógica) + Kotlin native module (radio/sensores) + Expo Dev Build** | RN acelera iteración; Kotlin expone APIs nativas que RN no tiene (Nearby, BT, GPS, cámara, mic, foreground services). Expo Dev Build genera APK con Kotlin adentro. | Expo Go (no soporta módulos nativos custom), RN puro sin Kotlin (sin acceso a Nearby), app nativa 100% Kotlin (más lento de iterar en 36h) |
 | **Stack backend** | **Node.js (Express) o Python (FastAPI) en Render** | Lo que el equipo domine; Render free tier alcanza para la demo; SQLite/Postgres como storage | Go (menos familiar), serverless (cold start mata la latencia), Docker custom (overhead para 36h) |
-| Tamaño telegrama | JSON ~120-200 bytes | Debug fácil, no requiere librería externa | CBOR/MessagePack (no core, complejidad extra) |
+| Tamaño telegrama | JSON v2 ≈ 550–700 bytes con bloque `vital` | El límite real es privacidad, no ancho de banda (ver sección "Protocolo v2") | CBOR/MessagePack (no core, complejidad extra) |
 | Identificador mensaje | UUID v4 | Universal, no colisiona, clave de dedup | Hash incremental (rompe con resets) |
 | Identificador persona | `user_id` separado del `id` del mensaje | Varios telegramas del mismo afectado (EMERGENCY → NEED_HELP) comparten `user_id` pero tienen `id` distinto | Mezclar ambos (rompe dedup) |
 | Identificador evento | `event_id` (ej: `EARTHQUAKE001`) | Permite agrupar todos los afectados del mismo desastre en el backend | Sin event_id (no se puede hacer heatmap ni cierre de evento) |
