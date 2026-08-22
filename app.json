@@ -7,10 +7,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
-      "package": "com.ziro.relay",
-      "minSdkVersion": 26,
-      "compileSdkVersion": 35,
-      "targetSdkVersion": 35
+      "package": "com.ziro.relay"
     },
     "plugins": [
       [
