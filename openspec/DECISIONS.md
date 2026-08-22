@@ -85,7 +85,7 @@ La decisión del mismo día que dejaba el dashboard web "post-hackathon" (ver TB
 | Decisión | Lo elegido | Por qué | Lo rechazado |
 |---|---|---|---|
 | **Dashboard en el MVP** | Adelantado a la demo (antes: post-hackathon) | Sin dashboard, heatmap y reportes IA son invisibles para jueces/prensa/rescatistas | Mantenerlo post-hackathon (el pitch pierde su demostración visual) |
-| **Resolución H3 compartida** | **res 8 (~500 m)** como constante con nombre (`backend/app/constants.py` y `frontWeb/src/lib/constants.ts`); fuente única de documentación = esta tabla | Seed y futuro agregador deben coincidir en granularidad; celda ~500 m respeta privacidad (nunca posición individual) | res 9 (~170 m, riesgo de reidentificación), hardcodear el número suelto (inconsistencia garantizada) |
+| **Resolución H3 compartida** | **res 8 (~500 m)** como constante con nombre (`backend/app/core/constants.py` y `frontWeb/src/lib/constants.ts`); fuente única de documentación = esta tabla | Seed y futuro agregador deben coincidir en granularidad; celda ~500 m respeta privacidad (nunca posición individual) | res 9 (~170 m, riesgo de reidentificación), hardcodear el número suelto (inconsistencia garantizada) |
 | **Contrato `reports.content`** | Schema JSON v1 documentado en design.md `{version, title, summary, recommendations[], figures}`; backend pasa tal cual, UI renderiza defensivamente con tipo TS espejo | Sin pipeline LLM real, doble validación runtime es costo puro; un contrato escrito basta para hackathon | pydantic + zod espejados (validación doble sin productor real) |
 | **Broadcast realtime** | WS `/ws` solo-notificación tipada; `ConnectionManager` en proceso; notificación interna por llamada directa (sin HTTP entre módulos) | Cumple la regla no-inter-module-HTTP; WS caído ≠ UI rota (reconciliación REST) | Pub/sub externo tipo Redis (fuera de presupuesto), WS transportando estado |
 | **Limitación monoproceso del seed** | El seed CLI corre en otro proceso y NO notifica por WS; flujo de demo = seed → arrancar servidor → clientes cargan por GET al conectar | Documentar honestamente el alcance; reconciliación inicial vía GET lo cubre | Polling periódico cliente (fuera de spec), seed embebido como único modo |
@@ -181,6 +181,19 @@ Lo menor (parámetros exactos de backoff WS, estrategia idempotente del seed, es
 - **Mutex por id** = evita que dos peers simultáneos disparen doble procesamiento del mismo telegrama.
 
 ---
+
+## Trigger Engine — proveedores sísmicos (cerrado 2026-08-22)
+
+El detonador que abre `events` y dispara la alerta usa **dos proveedores que coexisten**, ambos en `modules/` del proceso FastAPI, desactivados por defecto (`EMSC_ENABLED=false`, `SGC_ENABLED=false`):
+
+| Proveedor | Fuente | Mecanismo | Filtro por defecto |
+|---|---|---|---|
+| **EMSC** (mundial) | `wss://www.seismicportal.eu/standing_order/websocket` | WebSocket near-real-time (`modules/trigger_emsc`) | mag ≥ 5.0, bbox lat 0–14 / lon −80…−66 |
+| **SGC** (Colombia, prioridad para Bogotá) | `https://archive.sgc.gov.co/feed/v1.0.1/summary/five_days_all.json` | Polling HTTP c/60s (`modules/trigger_sgc`) | mag ≥ 4.5, mismo bbox |
+
+- Ambos deduplican por su `id`/`unid` propio → `events.event_id`, abren `EARTHQUAKE` abierto y emiten `EVENT_OPENED` por WS.
+- Para la demo con datos de prueba es suficiente; si el producto escala, **falta autorización escrita del SGC** para ingestión automática/caché/republicación (deuda ética documentada; contactar `datos@sgc.gov.co`). Verificar antes de activar en producción.
+- **Gotcha real verificado**: el feed SGC devuelve `geometry.coordinates` en orden **`[lat, lon, depth]`** (no `[lon, lat]`). El módulo lo auto-detecta por signos del bbox (los rangos lat/lon no se solapan) para no silenciar eventos reales.
 
 ## Restricciones y números que hay que recordar
 

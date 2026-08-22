@@ -30,7 +30,7 @@ La única comunicación entre ambos mundos es el **vuelco del gateway**: un disp
 │  A ──▶ B ──▶ C ──▶ D(gw)    │      │         ▼                       │
 │           │                 │      │  🌐 WEB pública (MapLibre+deck.gl)│
 └───────────┼─────────────────┘      └─────────────────────────────────┘
-            └──── POST /api/v1/telegrams ────▶ (única frontera)
+            └──── POST /api/v1/private/telegrams/batch ────▶ (única frontera)
 ```
 
 ## Componente 1 — App móvil (Android)
@@ -52,13 +52,44 @@ La única comunicación entre ambos mundos es el **vuelco del gateway**: un disp
 
 | Módulo interno | Responsabilidad | Detalle |
 |---|---|---|
-| **Ingesta** | Recibir telegramas de gateways | `POST /api/v1/telegrams` (batch, idempotente por `ON CONFLICT(id)`) |
+| **Gateway sync privado** | Recibir telegramas desde gateways autenticados | `POST /api/v1/private/telegrams/batch` (batch, idempotente por `ON CONFLICT(id)`); nunca es una ruta pública |
 | **Trigger Engine** | Detectar sismos válidos y activar dispositivos | Polling cada 10–15s a SGC + EMSC; fast trigger vs confirmation; push FCM + polling de respaldo en la app |
 | **Agregador espacial** | Calcular el mapa de calor | Agrupa coordenadas en celdas H3 (~500 m) vía `h3-py`; intensidad = f(count, recencia, hop count); `GET /api/v1/heatmap` |
 | **Reportes IA** | Narrar el estado por regiones | Snapshot SQL determinista → LLM → JSON validado contra schema → tabla `reports`. La IA nunca calcula cifras, solo interpreta. Cadencia 30 min→2h + botón manual |
 | **Realtime** | Empujar cambios a la web | WebSocket para nuevos telegramas y reportes |
 
 **Regla de dependencia:** los módulos se comunican solo a través de la base de datos o llamadas internas del proceso. Ningún módulo llama a otro por HTTP.
+
+### Estructura de carpetas (`backend/app/`)
+
+El código organiza los módulos internos por responsabilidad de dominio, no por capa técnica (nada de `routers/` + `services/` + `schemas/` mezclando módulos distintos):
+
+```
+app/
+├── core/                  # infraestructura compartida por todos los módulos
+│   ├── config.py          # settings desde env vars / .env
+│   ├── database.py        # engine, Session, Base declarativa
+│   ├── constants.py       # H3_CELL_RESOLUTION, etc.
+│   ├── ws.py              # ConnectionManager (broadcast realtime)
+│   └── events.py          # get_latest_open_event, usado por dashboard y ai_reports
+├── models/                # ORM SQLAlchemy — centralizado (una sola DB compartida)
+├── modules/
+│   ├── dashboard/         # consumo de DB para el mapa/dashboard público (solo lectura)
+│   │   ├── router.py      # GET /api/v1/heatmap, GET /api/v1/reports, WS /ws
+│   │   └── schemas.py     # contratos Pydantic de salida
+│   ├── ai_reports/        # pipeline de reportes IA
+│   │   ├── router.py      # POST /api/v1/reports/generate
+│   │   ├── generator.py   # snapshot + gov actions -> LLM -> validación -> persistencia
+│   │   ├── snapshot.py    # snapshot SQL determinista
+│   │   └── gov_actions.py # datos abiertos UNGRD (Socrata)
+│   ├── mobile_identity/   # registro, sesión y perfil privado del móvil
+│   ├── gateway_sync/      # batch privado y estado canónico de telegramas
+│   ├── trigger_emsc/      # listener WebSocket EMSC opcional
+│   └── trigger_sgc/       # poller SGC opcional
+└── main.py                # ensambla los routers de modules/*
+```
+
+Cada módulo es dueño de su router y su lógica; ningún módulo importa código interno de otro módulo — si necesitan compartir algo (como `get_latest_open_event`), ese código vive en `core/`.
 
 ## Componente 3 — Base de datos (PostgreSQL)
 
@@ -87,7 +118,7 @@ Nota: coordenadas exactas e identificadores (`sid`) **nunca salen por endpoint p
 ## Fronteras y contratos
 
 ```
-Móvil → Backend:   POST /api/v1/telegrams (batch JSON, schema protocol.md)
+Móvil → Backend:   POST /api/v1/private/telegrams/batch (batch autenticado)
 Trigger → Backend: interno (mismo proceso)
 Web ← Backend:     GET /api/v1/heatmap · GET /api/v1/reports · WebSocket
 LLM ← Backend:     llamada saliente con snapshot agregado (nunca datos crudos personales)
@@ -100,6 +131,7 @@ Porque la web es de consulta **pública**, la privacidad no es configuración si
 1. El público ve celdas H3 agregadas — densidad, nunca personas.
 2. Datos crudos (coordenadas exactas, `sid`) existen solo server-side, sin endpoint público.
 3. El LLM recibe exclusivamente agregados; jamás ve identidad ni ubicación precisa individual.
+4. Los perfiles y registros de gateway son privados; ningún router público los registra ni los serializa.
 
 ## Despliegue (hackathon)
 

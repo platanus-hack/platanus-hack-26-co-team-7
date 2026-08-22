@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database import get_session
+from app.core.database import get_session
 from app.modules.mobile_identity.config import settings
 from app.modules.mobile_identity.models import MobileEmergencyContact, MobileProfile, RefreshSession, UserCredential
 from app.modules.mobile_identity.profile import current_person, profile_response

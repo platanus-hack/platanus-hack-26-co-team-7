@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from app.database import get_session
+from app.core.database import get_session
 from app.modules.mobile_identity.models import MobileEmergencyContact, MobileProfile
 from app.modules.mobile_identity.schemas import ProfileResponse
 from app.modules.mobile_identity.security import bearer_scheme, require_user_id

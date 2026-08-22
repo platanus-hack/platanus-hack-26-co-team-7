@@ -1,8 +1,8 @@
 # Replica Backend — Models layer
 
 SQLAlchemy 2.0 models for the Replica emergency communication network backend.
-This package currently contains **only** the database schema (config + Base + models).
-No FastAPI app, endpoints, orchestrator, or Alembic migrations yet.
+This package currently contains the database schema (config + Base + models) and Alembic migrations.
+No FastAPI app, endpoints, or orchestrator yet.
 
 Runtime target is **PostgreSQL** (driver: `psycopg` 3). See `openspec/architecture.md`.
 
@@ -29,13 +29,10 @@ PowerShell example:
 $env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/replica"
 ```
 
-## Create tables
+## Apply database migrations
 
-```python
-from app.database import Base, engine
-import app.models  # noqa: F401  (registers all tables on Base.metadata)
-
-Base.metadata.create_all(engine)
+```bash
+alembic upgrade head
 ```
 
-Alembic migrations are a planned follow-up; `create_all` is only for early dev bootstrapping.
+Alembic is the sole authority for creating and evolving the database schema.

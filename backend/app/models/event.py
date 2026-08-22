@@ -13,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import CheckConstraint, DateTime, Enum, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.core.database import Base
 
 
 class EventType(enum.Enum):

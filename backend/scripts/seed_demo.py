@@ -20,8 +20,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import h3
 
-from app.constants import H3_CELL_RESOLUTION
-from app.database import Base, SessionLocal, engine
+from app.core.constants import H3_CELL_RESOLUTION
+from app.core.database import SessionLocal
 from app.models.analytics import ReceivedCell, Report, ReportSource
 from app.models.case import Case
 from app.models.event import Event, EventType
@@ -187,10 +187,8 @@ def build_rows(
     return event, people, telegrams, cases, cells, reports
 
 
-def seed(session_sessionmaker=SessionLocal, target_engine=engine) -> dict[str, int]:
+def seed(session_sessionmaker=SessionLocal) -> dict[str, int]:
     """Rebuild all data scoped to DEMO_EVENT_ID in one transaction."""
-    Base.metadata.create_all(target_engine)
-
     with session_sessionmaker() as session:
         with session.begin():
             # RESTRICT FKs must be deleted before the event. Demo people are

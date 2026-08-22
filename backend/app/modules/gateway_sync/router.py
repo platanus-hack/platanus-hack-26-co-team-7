@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.database import get_session
+from app.core.database import get_session
 from app.models.event import Event
 from app.modules.gateway_sync.models import GatewayTelegramRecord, PersonState, PersonStatus
 from app.modules.gateway_sync.schemas import TelegramBatchItemResult, TelegramBatchRequest, TelegramBatchResponse, TelegramInput
