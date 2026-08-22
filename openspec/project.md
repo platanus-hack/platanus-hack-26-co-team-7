@@ -70,12 +70,14 @@ Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la ca
 
 | Capa | Tecnología | Por qué |
 |---|---|---|
-| UI + lógica de negocio | **React Native** | Reuso de JS, hot reload durante el hackatón, fácil de iterar |
-| Módulo nativo | **Kotlin** (dentro del mismo APK) | Acceso directo a Nearby Connections, Bluetooth, Wi-Fi, GPS, cámara, micrófono, foreground services |
-| Build | **Expo Development Build** (no Expo Go) | Expo Go no soporta módulos nativos custom; el dev build genera un APK con Kotlin adentro |
-| Distribución | **APK firmado** | Se instala a mano en los teléfonos de la demo sin Play Store |
+| UI | **Jetpack Compose** | Declarativo, preview en vivo, compila a nativo. Velocidad de iteración comparable a RN para UI simple (3-4 pantallas). |
+| Lógica de red, SQLite, sensores, foreground service | **Kotlin** (mismo módulo) | Nearby Connections, Room, GPS, cámara, micrófono, BT, Wi-Fi — todo en un solo proceso. |
+| Build | **Android Studio / Gradle** | Un solo toolchain, un solo APK, sin bridge, sin Metro, sin Expo. |
+| Distribución | **APK firmado** | Se instala a mano en los teléfonos de la demo sin Play Store. |
 
 **Punto crítico:** Nearby Connections vive **dentro del APK de cada teléfono** — NO en el backend. Cada nodo Android corre la misma app y habla con sus pares por BT/Wi-Fi Direct. El backend es un observador pasivo que solo recibe cuando un nodo tiene Internet. Ver `communication.md` y `DECISIONS.md` para el detalle.
+
+**Decisión de fondo:** todo el sistema offline es un único APK Android nativo. La lógica de mesh, dedup, gossip, beacons y persistencia vive en Kotlin. La UI es Compose. No hay JS, no hay bridge, no hay Expo. El servidor solo ve snapshots cuando hay Internet.
 
 ## Stack del backend
 
