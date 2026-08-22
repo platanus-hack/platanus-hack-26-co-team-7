@@ -54,13 +54,33 @@ def _require_database_url() -> str:
     return url
 
 
+def _env_or(default: str, *names: str) -> str:
+    """First non-empty env var among ``names`` or the hardcoded default."""
+    for name in names:
+        raw = os.environ.get(name)
+        if raw and raw.strip():
+            return raw.strip()
+    return default
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
     cors_origins: tuple[str, ...]
+    # AI reports (openspec/architecture.md "Reportes IA"). Empty llm_api_key
+    # disables LLM narration -> deterministic fallback template is used.
+    llm_api_key: str
+    llm_model: str
+    llm_base_url: str
+    # Colombian open data (Socrata rgre-6ak4) department filter.
+    gov_department: str
 
 
 settings = Settings(
     database_url=_require_database_url(),
     cors_origins=_parse_cors_origins(os.environ.get("BACKEND_CORS_ORIGINS")),
+    llm_api_key=os.environ.get("LLM_API_KEY", ""),
+    llm_model=_env_or("gpt-4o-mini", "LLM_MODEL"),
+    llm_base_url=_env_or("https://api.openai.com/v1", "LLM_BASE_URL"),
+    gov_department=_env_or("CUNDINAMARCA", "GOV_DEPARTMENT"),
 )
