@@ -87,13 +87,13 @@ class ReceivedCell(Base):
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    telegram_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    # intensity = f(count, recency, hop count), computed upstream and cached.
+    person_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # intensity = f(person_count, recency), computed upstream and cached.
     intensity: Mapped[float] = mapped_column(Float, nullable=False)
 
     __table_args__ = (
         CheckConstraint("window_start < window_end", name="ck_received_cells_window"),
-        CheckConstraint("telegram_count >= 0", name="ck_received_cells_count_nonneg"),
+        CheckConstraint("person_count >= 0", name="ck_received_cells_count_nonneg"),
         CheckConstraint("intensity >= 0", name="ck_received_cells_intensity_nonneg"),
         UniqueConstraint("event_id", "h3_index", "window_start"),
         Index("ix_received_cells_event_h3", "event_id", "h3_index"),

@@ -99,7 +99,7 @@ def build_rows(now: datetime) -> tuple[Event, list[ReceivedCell], list[Report]]:
             cells.append(ReceivedCell(
                 event_id=DEMO_EVENT_ID, h3_index=h3_index,
                 window_start=window_start, window_end=window_start + window_len,
-                telegram_count=count, intensity=intensity,
+                person_count=count, intensity=intensity,
             ))
 
     reports = [

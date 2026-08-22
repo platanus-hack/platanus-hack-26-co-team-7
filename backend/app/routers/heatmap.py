@@ -8,7 +8,7 @@ Implements openspec/changes/dashboard-web/specs/public-api-readonly
 - No open event at all: 200 with an empty collection (cold start).
 - Explicit unknown ``event_id``: typed 404 ``EVENT_NOT_FOUND``.
 - Cells accumulate ALL windows of the event, one row per ``h3_index``
-  (GROUP BY with SUM(telegram_count), MAX(intensity), MAX(window_start)).
+  (GROUP BY with SUM(person_count), MAX(intensity), MAX(window_start)).
   Intensity is read as-is (already precomputed upstream); never recomputed.
 - Centroid derived server-side from the H3 cell only — a ~500 m cell center,
   never an individual position.
@@ -62,7 +62,7 @@ def get_heatmap(
     rows = session.execute(
         select(
             ReceivedCell.h3_index,
-            func.sum(ReceivedCell.telegram_count).label("telegram_count"),
+            func.sum(ReceivedCell.person_count).label("person_count"),
             func.max(ReceivedCell.intensity).label("intensity"),
             func.max(ReceivedCell.window_start).label("window_start"),
         )
@@ -74,11 +74,11 @@ def get_heatmap(
         HeatmapCell(
             h3_index=h3_index,
             intensity=float(intensity),
-            telegram_count=int(telegram_count),
+            person_count=int(person_count),
             centroid=_cell_centroid(h3_index),
             window_start=window_start,
         )
-        for h3_index, telegram_count, intensity, window_start in rows
+        for h3_index, person_count, intensity, window_start in rows
     ]
     return HeatmapResponse(event_id=event_id, cells=cells)
 

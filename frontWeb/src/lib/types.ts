@@ -13,7 +13,7 @@ export interface Centroid {
 export interface HeatmapCell {
   h3_index: string;
   intensity: number;
-  telegram_count: number;
+  person_count: number;
   centroid: Centroid;
   window_start: string;
 }

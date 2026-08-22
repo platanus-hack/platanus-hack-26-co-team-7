@@ -12,7 +12,7 @@ import type { HeatmapCell } from "../lib/types";
  * Deferred chunk (design D8): MapLibre GL basemap (OpenFreeMap liberty style,
  * no API key) + deck.gl H3HexagonLayer consuming `h3_index` directly.
  * Color ramp by `intensity` (green → yellow → red, 0–10); elevation by
- * `telegram_count`. Imported via React.lazy from App — never in the critical
+ * `person_count`. Imported via React.lazy from App — never in the critical
  * bundle.
  */
 
@@ -51,7 +51,7 @@ export default function MapView({ cells }: MapViewProps) {
         data: cells,
         getHexagon: (d: HeatmapCell) => d.h3_index,
         getFillColor: (d: HeatmapCell) => intensityColor(d.intensity),
-        getElevation: (d: HeatmapCell) => d.telegram_count,
+        getElevation: (d: HeatmapCell) => d.person_count,
         elevationScale: 8,
         extruded: true,
         pickable: true,
@@ -70,7 +70,7 @@ export default function MapView({ cells }: MapViewProps) {
       getTooltip={(info: PickingInfo<HeatmapCell>) =>
         info.object
           ? {
-              html: `<b>Personas en peligro:</b> ${info.object.telegram_count}`,
+              html: `<b>Personas en peligro:</b> ${info.object.person_count}`,
               style: {
                 backgroundColor: "#141a24",
                 color: "#e6edf3",

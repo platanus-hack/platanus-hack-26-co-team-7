@@ -25,7 +25,7 @@ class Centroid(BaseModel):
 class HeatmapCell(BaseModel):
     h3_index: str
     intensity: float
-    telegram_count: int
+    person_count: int
     centroid: Centroid
     window_start: datetime
 
