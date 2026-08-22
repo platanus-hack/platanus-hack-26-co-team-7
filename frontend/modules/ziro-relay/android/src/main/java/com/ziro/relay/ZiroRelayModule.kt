@@ -1,15 +1,24 @@
 package com.ziro.relay
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import com.ziro.relay.adapters.profile.HardcodedProfileStore
+import com.ziro.relay.adapters.service.RelayForegroundService
+import com.ziro.relay.domain.BloodRh
+import com.ziro.relay.domain.BloodType
+import com.ziro.relay.domain.Disability
+import com.ziro.relay.domain.DocType
+import com.ziro.relay.domain.EmergencyContact
 import com.ziro.relay.domain.EventType
 import com.ziro.relay.domain.GeoPoint
 import com.ziro.relay.domain.PersonStatus
+import com.ziro.relay.domain.Profile
 import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
@@ -21,6 +30,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -49,9 +59,9 @@ import kotlinx.serialization.json.Json
  *
  * ── Keep this surface small ──
  *
- * Five functions and one event. Every addition here is a line that has to be kept in sync
- * by hand in TypeScript, with no compiler watching. If something can be computed in JS
- * from a telegram that already crossed, do it in JS.
+ * Every addition here is a line that has to be kept in sync by hand in TypeScript, with no
+ * compiler watching. If something can be computed in JS from a telegram that already crossed,
+ * do it in JS.
  */
 class ZiroRelayModule : Module() {
 
@@ -98,47 +108,42 @@ class ZiroRelayModule : Module() {
             RelayContainer.originHash
         }
 
+        AsyncFunction("getProfile").Coroutine<String> {
+            profileWire(RelayContainer.profiles.get() ?: HardcodedProfileStore.DEMO_PROFILE)
+        }
+
+        AsyncFunction("saveProfile").Coroutine<Unit, String> { profileJson ->
+            val input = runCatching { json.decodeFromString(ProfileInput.serializer(), profileJson) }
+                .getOrElse { throw IllegalArgumentException("Invalid profile: ${it.message}") }
+            RelayContainer.profiles.save(input.toDomain(RelayContainer.profiles.get()))
+        }
+
         // Dot call with an explicit type argument: the no-arg lambda is otherwise ambiguous
         // between the zero- and one-parameter Coroutine overloads. Awaiting the permission
         // request forces this to be a Coroutine — without it, start() would return before
         // the user responded to the dialog and Nearby Connections would silently no-op.
         AsyncFunction("start").Coroutine<Unit> {
-            val result = requestPermissionsInternal()
-            val denied = result["denied"].orEmpty()
+            // Ensure runtime permissions first (Nearby/BT silently no-op on Android 12+
+            // without the BT trio, NEARBY_WIFI_DEVICES, FINE_LOCATION and POST_NOTIFICATIONS).
+            val permResult = requestPermissionsInternal()
+            val denied = permResult["denied"].orEmpty()
             if (denied.isNotEmpty()) {
                 throw IllegalStateException(
                     "Cannot start ZIRO relay: missing required runtime permissions. " +
                         "Grant them in Settings and try again. Denied: " + denied.joinToString(),
                 )
             }
-            RelayContainer.engine.start()
+            // Engine runs inside the foreground service so it survives JS going background.
+            val context = RelayContainer.context()
+            ContextCompat.startForegroundService(context, Intent(context, RelayForegroundService::class.java))
         }
 
         AsyncFunction("stop") {
-            RelayContainer.engine.stop()
+            RelayContainer.context().stopService(Intent(RelayContainer.context(), RelayForegroundService::class.java))
         }
 
-        /** Returns the created telegram as a wire JSON string. */
-        AsyncFunction("sendTelegram") Coroutine { eventId: String, lat: Double, lng: Double, severity: Int ->
-            val telegram = RelayContainer.sendTelegram(
-                eventId = eventId,
-                location = GeoPoint(lat = lat, lng = lng),
-                event = EventType.EARTHQUAKE,
-                status = PersonStatus.EMERGENCY,
-                severity = severity,
-            )
-            return@Coroutine wire(telegram)
-        }
-
-        /** The whole local ledger as a JSON array of telegrams. Newest first. */
-        // Dot call with an explicit type argument: the no-arg lambda is otherwise ambiguous
-        // between the zero- and one-parameter Coroutine overloads.
-        AsyncFunction("getLedger").Coroutine<String> {
-            return@Coroutine json.encodeToString(
-                ListSerializer(Telegram.serializer()),
-                RelayContainer.ledger.all(),
-            )
-        }
+        /** Read-only current grant state, for the UI to render hints before pressing start. */
+        Function("getPermissions") { permissionState() }
 
         /**
          * Request all runtime permissions required by Nearby Connections + the foreground
@@ -146,12 +151,43 @@ class ZiroRelayModule : Module() {
          * Kotlin engine uses for telegrams, so the same Json instance encodes both.
          *
          * Safe to call multiple times; permissions already granted are skipped from the
-         * system dialog and just echoed back in `granted`.
+         * system dialog and just echoed back in `granted`. `start()` already calls this
+         * internally and throws on denial — only call it directly if you want to preflight
+         * before showing the start button.
          */
         // Dot call with explicit type argument for the same no-arg-lambda ambiguity reason
-        // as getLedger above.
+        // as getLedger below.
         AsyncFunction("requestPermissions").Coroutine<String> {
-            return@Coroutine encodePermissionResult(requestPermissionsInternal())
+            encodePermissionResult(requestPermissionsInternal())
+        }
+
+        /** Returns the created telegram as a wire JSON string. */
+        AsyncFunction("sendTelegram").Coroutine<String, String> { draftJson ->
+            val draft = runCatching { json.decodeFromString(TelegramDraft.serializer(), draftJson) }
+                .getOrElse { throw IllegalArgumentException("Invalid telegram draft: ${it.message}") }
+            require(draft.eventId.isNotBlank()) { "eventId is required" }
+            require(draft.severity in 1..5) { "severity must be between 1 and 5" }
+            require(draft.location.lat in -90.0..90.0 && draft.location.lng in -180.0..180.0) {
+                "location is outside valid coordinates"
+            }
+            val telegram = RelayContainer.sendTelegram(
+                eventId = draft.eventId.trim(),
+                location = draft.location,
+                event = draft.event,
+                status = draft.status,
+                severity = draft.severity,
+            )
+            wire(telegram)
+        }
+
+        /** The whole local ledger as a JSON array of telegrams. Newest first. */
+        // Dot call with an explicit type argument: the no-arg lambda is otherwise ambiguous
+        // between the zero- and one-parameter Coroutine overloads.
+        AsyncFunction("getLedger").Coroutine<String> {
+            json.encodeToString(
+                ListSerializer(Telegram.serializer()),
+                RelayContainer.ledger.all(),
+            )
         }
     }
 
@@ -234,6 +270,17 @@ class ZiroRelayModule : Module() {
     }
 
     /**
+     * Read-only permission state without triggering a request — for the UI to render the
+     * "we need these" hint before the user taps start.
+     */
+    private fun permissionState(): Map<String, Boolean> {
+        val context = RelayContainer.context()
+        return requiredPermissions().associateWith {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    /**
      * Permissions Nearby Connections needs to actually broadcast and discover on modern
      * Android. ACCESS_FINE_LOCATION is required on every version for BLE scanning; the
      * Bluetooth trio only exists on API 31+; NEARBY_WIFI_DEVICES and POST_NOTIFICATIONS are
@@ -277,6 +324,9 @@ class ZiroRelayModule : Module() {
         is RelayEvent.TelegramSent ->
             mapOf("type" to "TELEGRAM_SENT", "peerId" to to.value, "telegramId" to id)
 
+        is RelayEvent.TelegramDelivered ->
+            mapOf("type" to "TELEGRAM_DELIVERED", "peerId" to to.value, "telegramId" to id)
+
         is RelayEvent.TelegramRejected ->
             mapOf("type" to "TELEGRAM_REJECTED", "peerId" to from.value, "reason" to reason.name)
 
@@ -290,7 +340,73 @@ class ZiroRelayModule : Module() {
     private fun wire(telegram: Telegram): String =
         TelegramCodec.encode(telegram).toString(Charsets.UTF_8)
 
+    private fun profileWire(profile: Profile): String = json.encodeToString(
+        ProfileInput.serializer(),
+        ProfileInput.from(profile),
+    )
+
     private companion object {
         const val EVENT_RELAY = "onRelayEvent"
+    }
+}
+
+@Serializable
+private data class TelegramDraft(
+    val eventId: String,
+    val event: EventType,
+    val status: PersonStatus,
+    val location: GeoPoint,
+    val severity: Int,
+)
+
+@Serializable
+private data class ProfileContact(val name: String, val phone: String, val relationship: String)
+
+@Serializable
+private data class ProfileInput(
+    val userId: String,
+    val fullName: String,
+    val docType: DocType,
+    val docNumber: String,
+    val birthDate: String,
+    val bloodType: BloodType,
+    val bloodRh: BloodRh,
+    val allergies: List<String> = emptyList(),
+    val chronicConditions: List<String> = emptyList(),
+    val medications: List<String> = emptyList(),
+    val disability: Disability = Disability.NONE,
+    val isPregnant: Boolean = false,
+    val weightKg: Int? = null,
+    val eps: String? = null,
+    val emergencyContacts: List<ProfileContact> = emptyList(),
+    val questionId: String,
+) {
+    fun toDomain(current: Profile?): Profile {
+        require(userId.isNotBlank() && fullName.isNotBlank() && docNumber.isNotBlank() && birthDate.isNotBlank() && questionId.isNotBlank()) {
+            "Profile identity, birth date, document and verification question are required"
+        }
+        val privateFields = current ?: HardcodedProfileStore.DEMO_PROFILE
+        return Profile(
+            userId.trim(), fullName.trim(), docType, docNumber.trim(), birthDate.trim(), bloodType, bloodRh,
+            allergies.map(String::trim).filter(String::isNotBlank),
+            chronicConditions.map(String::trim).filter(String::isNotBlank),
+            medications.map(String::trim).filter(String::isNotBlank),
+            disability, isPregnant, weightKg, eps?.trim()?.ifBlank { null },
+            emergencyContacts
+                .filter { it.name.isNotBlank() && it.phone.isNotBlank() }
+                .map { EmergencyContact(it.name.trim(), it.phone.trim(), it.relationship.trim()) },
+            questionId.trim(), privateFields.answerHash, privateFields.deviceSecret,
+        )
+    }
+
+    companion object {
+        fun from(profile: Profile) = ProfileInput(
+            profile.userId, profile.fullName, profile.docType, profile.docNumber,
+            profile.birthDate, profile.bloodType, profile.bloodRh,
+            profile.allergies, profile.chronicConditions, profile.medications,
+            profile.disability, profile.isPregnant, profile.weightKg, profile.eps,
+            profile.emergencyContacts.map { ProfileContact(it.name, it.phone, it.relationship) },
+            profile.questionId,
+        )
     }
 }

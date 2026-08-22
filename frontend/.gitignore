@@ -19,3 +19,4 @@ modules/*/android/build/
 .atl
 
 package-lock.json
+build

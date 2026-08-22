@@ -42,7 +42,7 @@
 
     <application>
         <service
-            android:name=".adapters.service.RelayForegroundService"
+            android:name="com.ziro.relay.adapters.service.RelayForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
     </application>
