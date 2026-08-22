@@ -4,15 +4,18 @@ import android.content.Context
 import com.ziro.relay.adapters.bus.SharedFlowEventBus
 import com.ziro.relay.adapters.crypto.HmacSha256Signer
 import com.ziro.relay.adapters.ledger.SqliteTelegramLedger
+import com.ziro.relay.adapters.location.AndroidLocationSource
 import com.ziro.relay.adapters.nearby.NearbyTransport
 import com.ziro.relay.adapters.profile.SqliteProfileStore
 import com.ziro.relay.adapters.sqlite.RelayDatabase
 import com.ziro.relay.adapters.sqlite.LegacySharedPreferencesMigration
+import com.ziro.relay.application.AnnouncePresence
 import com.ziro.relay.application.ForwardPending
 import com.ziro.relay.application.IngestTelegram
 import com.ziro.relay.application.RelayEngine
 import com.ziro.relay.application.SendTelegram
 import com.ziro.relay.ports.EventBus
+import com.ziro.relay.ports.LocationSource
 import com.ziro.relay.ports.ProfileStore
 import com.ziro.relay.ports.Signer
 import com.ziro.relay.ports.TelegramLedger
@@ -45,6 +48,10 @@ object RelayContainer {
         private set
     lateinit var sendTelegram: SendTelegram
         private set
+    lateinit var location: LocationSource
+        private set
+    lateinit var announcePresence: AnnouncePresence
+        private set
     lateinit var engine: RelayEngine
         private set
 
@@ -65,7 +72,9 @@ object RelayContainer {
         transport = NearbyTransport(appContext, bus, scope, originHash, ingest)
         forwardPending = ForwardPending(ledger, transport)
         sendTelegram = SendTelegram(ledger, transport, signer, profiles, originHash)
-        engine = RelayEngine(transport, bus, forwardPending, ledger, scope)
+        location = AndroidLocationSource(appContext)
+        announcePresence = AnnouncePresence(sendTelegram, location, bus)
+        engine = RelayEngine(transport, bus, forwardPending, ledger, scope, announcePresence, location)
     }
 
     fun context(): Context = appContext

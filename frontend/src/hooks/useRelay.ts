@@ -89,11 +89,16 @@ export function useRelay() {
       switch (event.type) {
         case 'STATUS_CHANGED':
           setStatus(event.status);
+          // Starting the relay announces this device, and that write produces no
+          // TELEGRAM_SENT until a peer exists. Without this the sender's own outbound
+          // telegram is missing from the inbox until something else happens to refresh.
+          void refresh();
           break;
         case 'PEER_CONNECTED': {
           peerConnectionSequence.current += 1;
           setLastPeerConnection({ peerId: event.peerId, sequence: peerConnectionSequence.current });
           setPeers((current) => [...new Set([...current, event.peerId])]);
+          void refresh();
           break;
         }
         case 'PEER_DISCONNECTED':
@@ -140,9 +145,17 @@ export function useRelay() {
     };
   }, [client, refresh, syncRuntimeState]);
 
+  // The ledger holds both directions on purpose - a node must carry its own telegram to
+  // relay it. But the two mean very different things to a person, so the UI never mixes
+  // them: `inbox` is other people asking for help, `outbox` is this device's own card.
+  const inbox = useMemo(() => telegrams.filter(({ receivedFrom }) => receivedFrom !== null), [telegrams]);
+  const outbox = useMemo(() => telegrams.filter(({ receivedFrom }) => receivedFrom === null), [telegrams]);
+
   return {
     status,
     telegrams,
+    inbox,
+    outbox,
     peerCount: peers.length,
     peers,
     discoveredPeers,
