@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
-from app.database import Base
+from app.core.database import Base
 
 
 class TelegramHop(Base):

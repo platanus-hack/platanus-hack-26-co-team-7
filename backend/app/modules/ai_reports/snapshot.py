@@ -17,8 +17,8 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.events import get_latest_open_event
 from app.models.analytics import ReceivedCell, Report
-from app.routers.heatmap import get_latest_open_event
 
 _TOP_CELLS = 12
 

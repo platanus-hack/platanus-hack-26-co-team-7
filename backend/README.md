@@ -32,7 +32,7 @@ $env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/replica"
 ## Create tables
 
 ```python
-from app.database import Base, engine
+from app.core.database import Base, engine
 import app.models  # noqa: F401  (registers all tables on Base.metadata)
 
 Base.metadata.create_all(engine)

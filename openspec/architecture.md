@@ -60,6 +60,36 @@ La única comunicación entre ambos mundos es el **vuelco del gateway**: un disp
 
 **Regla de dependencia:** los módulos se comunican solo a través de la base de datos o llamadas internas del proceso. Ningún módulo llama a otro por HTTP.
 
+### Estructura de carpetas (`backend/app/`)
+
+El código organiza los módulos internos por responsabilidad de dominio, no por capa técnica (nada de `routers/` + `services/` + `schemas/` mezclando módulos distintos):
+
+```
+app/
+├── core/                  # infraestructura compartida por todos los módulos
+│   ├── config.py          # settings desde env vars / .env
+│   ├── database.py        # engine, Session, Base declarativa
+│   ├── constants.py       # H3_CELL_RESOLUTION, etc.
+│   ├── ws.py              # ConnectionManager (broadcast realtime)
+│   └── events.py          # get_latest_open_event, usado por dashboard y ai_reports
+├── models/                # ORM SQLAlchemy — centralizado (una sola DB compartida)
+├── modules/
+│   ├── dashboard/         # consumo de DB para el mapa/dashboard público (solo lectura)
+│   │   ├── router.py      # GET /api/v1/heatmap, GET /api/v1/reports, WS /ws
+│   │   └── schemas.py     # contratos Pydantic de salida
+│   ├── ai_reports/        # pipeline de reportes IA
+│   │   ├── router.py      # POST /api/v1/reports/generate
+│   │   ├── generator.py   # snapshot + gov actions -> LLM -> validación -> persistencia
+│   │   ├── snapshot.py    # snapshot SQL determinista
+│   │   └── gov_actions.py # datos abiertos UNGRD (Socrata)
+│   ├── ingestion/         # (pendiente) POST /api/v1/telegrams
+│   ├── trigger/           # (pendiente) polling SGC/EMSC
+│   └── aggregation/       # (pendiente) telegramas → received_cells (H3)
+└── main.py                # ensambla los routers de modules/*
+```
+
+Cada módulo es dueño de su router y su lógica; ningún módulo importa código interno de otro módulo — si necesitan compartir algo (como `get_latest_open_event`), ese código vive en `core/`.
+
 ## Componente 3 — Base de datos (PostgreSQL)
 
 **Responsabilidad:** única fuente de verdad del mundo online.

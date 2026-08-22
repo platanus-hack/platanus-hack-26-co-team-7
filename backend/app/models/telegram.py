@@ -35,7 +35,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
-from app.database import Base
+from app.core.database import Base
 from app.models.event import EventType
 from app.models.person import PersonStatus
 

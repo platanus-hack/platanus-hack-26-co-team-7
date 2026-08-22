@@ -20,11 +20,11 @@ from typing import Any
 import httpx
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import settings
+from app.core.config import settings
+from app.core.ws import ConnectionManager, manager
 from app.models.analytics import Report, ReportSource
-from app.services.gov_actions import fetch_recent_actions
-from app.services.snapshot import build_snapshot
-from app.ws import ConnectionManager, manager
+from app.modules.ai_reports.gov_actions import fetch_recent_actions
+from app.modules.ai_reports.snapshot import build_snapshot
 
 logger = logging.getLogger(__name__)
 
