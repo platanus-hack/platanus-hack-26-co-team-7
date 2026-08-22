@@ -7,6 +7,3 @@ venv/
 
 # Local env
 .env
-
-# SQLite dev artifacts (smoke tests only; production is PostgreSQL)
-*.db

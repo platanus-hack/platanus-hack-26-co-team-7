@@ -23,7 +23,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     UniqueConstraint,
     func,
@@ -57,11 +56,8 @@ class Report(Base):
         Enum(ReportSource, native_enum=False, length=16), nullable=False
     )
 
-    # Validated LLM output. JSONB on PostgreSQL; plain JSON variant so the
-    # metadata validates on SQLite smoke tests.
-    content: Mapped[dict] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=False
-    )
+    # Validated LLM output. JSONB on PostgreSQL (PostgreSQL-only runtime).
+    content: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -5,8 +5,8 @@ Bogota (res 8, design D1; varied intensities over two windows to exercise
 the GROUP BY / MAX aggregation of design D6) and AI Report rows whose
 ``content`` follows schema v1 of design D2. Idempotency (design D3):
 reconstruction by fixed event id — every run deletes all data scoped to
-DEMO_EVENT_ID (reports FK RESTRICT -> deleted first; received_cells deleted
-explicitly because SQLite does not enforce FKs) and reinserts fresh data in
+DEMO_EVENT_ID (reports FK RESTRICT -> deleted first; received_cells CASCADE)
+and reinserts fresh data in
 one transaction; no duplicates, other events untouched. CLI limitation (D7):
 separate process, cannot broadcast WebSocket updates; start before uvicorn,
 clients load state via GET.
@@ -19,7 +19,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import h3
-from sqlalchemy import func
 
 from app.constants import H3_CELL_RESOLUTION
 from app.database import Base, SessionLocal, engine
@@ -121,19 +120,12 @@ def seed(session_sessionmaker=SessionLocal, target_engine=engine) -> dict[str, i
     with session_sessionmaker() as session:
         with session.begin():
             # reports FK is RESTRICT -> delete BEFORE the event; received_cells
-            # FK is CASCADE but deleted explicitly (SQLite FK enforcement off).
+            # FK is CASCADE.
             session.query(Report).where(Report.event_id == DEMO_EVENT_ID).delete()
             session.query(ReceivedCell).where(ReceivedCell.event_id == DEMO_EVENT_ID).delete()
             session.query(Event).where(Event.event_id == DEMO_EVENT_ID).delete()
 
             event, cells, reports = build_rows(datetime.now(timezone.utc))
-
-            # BIGINT autoincrement PKs do not work on SQLite smoke tests, so
-            # ids are assigned explicitly (max + n); PostgreSQL unaffected.
-            next_id = (session.query(func.max(ReceivedCell.id)).scalar() or 0) + 1
-            for cell in cells:
-                cell.id = next_id
-                next_id += 1
 
             session.add(event)
             session.add_all(cells)

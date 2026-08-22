@@ -28,7 +28,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     func,
 )
@@ -88,10 +87,8 @@ class Telegram(Base):
     answer_hash: Mapped[str | None] = mapped_column(String(64))
 
     # Immutable audit copy of the complete raw telegram as received.
-    # JSONB on PostgreSQL; plain JSON variant so metadata validates on SQLite.
-    payload: Mapped[dict] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=False
-    )
+    # JSONB on PostgreSQL (PostgreSQL-only runtime).
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

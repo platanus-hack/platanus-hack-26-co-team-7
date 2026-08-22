@@ -22,7 +22,6 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
-    JSON,
     Boolean,
     Date,
     DateTime,
@@ -87,8 +86,8 @@ class Disability(enum.Enum):
 
 
 def _json_array(**kwargs):  # noqa: ANN001, ANN003
-    """JSONB column (plain JSON variant so metadata validates on SQLite)."""
-    return JSONB().with_variant(JSON(), "sqlite")
+    """JSONB column (PostgreSQL-only)."""
+    return JSONB()
 
 
 class Person(Base):
