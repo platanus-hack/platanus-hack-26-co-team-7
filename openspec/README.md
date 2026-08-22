@@ -10,8 +10,9 @@
 4. **[ledger.md](./ledger.md)** — Registro distribuido local + gossip entre pares. Cómo crece, cómo se sincroniza, cómo se limpia.
 5. **[storage.md](./storage.md)** — Manejo de evidencia (video/audio). Tres patrones de propagación con tradeoffs.
 6. **[orphan-device.md](./orphan-device.md)** — Caso "el teléfono quedó tirado en la zona". Diseño de auto-supervivencia del origen.
-7. **[api.md](./api.md)** — Endpoints backend mínimos para la demo (HTTP + WebSocket).
-8. **[demo-plan.md](./demo-plan.md)** — Guión de 3 minutos con 5 teléfonos para los jueces.
+7. **[dev-plan.md](./dev-plan.md)** — Plan de desarrollo para 2 personas: contrato compartido, división equitativa por path vertical, fases, checkpoints de integración.
+8. **[api.md](./api.md)** — Endpoints backend mínimos para la demo (HTTP + WebSocket).
+9. **[demo-plan.md](./demo-plan.md)** — Guión de 3 minutos con 5 teléfonos para los jueces.
 
 ## TL;DR (1 minuto)
 
