@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
-import com.facebook.react.modules.core.PermissionAwareActivity
 import com.ziro.relay.adapters.service.RelayForegroundService
 import com.ziro.relay.domain.BloodRh
 import com.ziro.relay.domain.BloodType
@@ -187,11 +186,10 @@ class ZiroRelayModule : Module() {
     }
 
     /**
-     * Resolves Nearby runtime permissions through Expo's installed PermissionsService. Its
-     * PermissionAwareActivity callback is the path ReactActivity forwards after Android shows
-     * the system dialog, unlike the generic activity-result route that only receives activity
-     * results. This function is invoked on Queues.MAIN so the request originates from the
-     * foreground ReactActivity.
+     * Resolves Nearby runtime permissions through Expo's installed PermissionsService.
+     * AppContext.permissions owns the React-specific permission callback; this module only
+     * verifies that AppContext has a live foreground Activity before delegating to it. This
+     * function is invoked on Queues.MAIN so the request originates from that Activity.
      */
     private suspend fun requestPermissionsInternal(): Map<String, List<String>> {
         val context = RelayContainer.context()
@@ -207,7 +205,7 @@ class ZiroRelayModule : Module() {
         }
 
         val activity = appContext.currentActivity
-        if (activity == null || activity.isFinishing || activity.isDestroyed || activity !is PermissionAwareActivity) {
+        if (activity == null || activity.isFinishing || activity.isDestroyed) {
             throw IllegalStateException(
                 "Permissions can only be requested while the ZIRO app is open in the foreground. " +
                     "Return to the app and tap Grant permissions again.",
