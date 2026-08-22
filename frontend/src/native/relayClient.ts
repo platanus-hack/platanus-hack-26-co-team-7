@@ -1,4 +1,4 @@
-import { NativeModulesProxy } from 'expo-modules-core';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { Platform } from 'react-native';
 import type {
   EngineStatus,
@@ -20,7 +20,7 @@ import type {
  *   with the fake  -> runs in EXPO GO. Hot reload, no dev build, no Android SDK, no phone
  *                     pairing, no code from developer A. B can build every screen on day
  *                     one and iterate in seconds.
- *   with native    -> the real engine, in a dev client build.
+ *   with native    -> the real engine, in an Android dev or release build.
  *
  * It is also the fastest diagnostic in the project:
  *   works on fake + fails on native  -> the engine is the problem (A)
@@ -28,6 +28,7 @@ import type {
  */
 export interface RelayClient {
   getStatus(): EngineStatus;
+  getConnectedPeers(): string[];
   start(): Promise<void>;
   stop(): Promise<void>;
   getPermissions(): RelayPermissions;
@@ -45,12 +46,13 @@ export interface RelayClient {
 }
 
 /**
- * Flip to false once a dev client build is installed and the engine is wired.
- *
- * Keep it as a module constant rather than an env var: a single obvious line beats hunting
- * for why the app is showing invented data at 4am.
+ * The fake is limited to environments where Expo cannot resolve the local native module.
  */
-export const USE_FAKE_ENGINE = Platform.OS !== 'android' || NativeModulesProxy.ZiroRelay === undefined;
+const nativeRelay = Platform.OS === 'android' ? requireOptionalNativeModule<unknown>('ZiroRelay') : null;
+
+// NativeModulesProxy is deprecated and can omit JSI Expo modules. Resolve through the API Expo
+// Modules Core uses for the actual bridge so registered Android modules select the native client.
+export const USE_FAKE_ENGINE = nativeRelay === null;
 
 export function createRelayClient(): RelayClient {
   if (USE_FAKE_ENGINE) {
@@ -61,6 +63,7 @@ export function createRelayClient(): RelayClient {
   const native = require('ziro-relay') as typeof import('ziro-relay');
   return {
     getStatus: native.getStatus,
+    getConnectedPeers: native.getConnectedPeers,
     start: native.start,
     stop: native.stop,
     getPermissions: native.getPermissions,

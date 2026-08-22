@@ -26,6 +26,7 @@ export * from './src/ZiroRelay.types';
  */
 interface ZiroRelayNativeModule {
   getStatus(): EngineStatus;
+  getConnectedPeers(): string[];
   getOriginHash(): string;
   getProfile(): Promise<string>;
   saveProfile(profile: string): Promise<void>;
@@ -52,6 +53,11 @@ const native = requireNativeModule<ZiroRelayNativeModule>('ZiroRelay');
 
 export function getStatus(): EngineStatus {
   return native.getStatus();
+}
+
+/** Current native peer snapshot; used to recover when the JS event listener was inactive. */
+export function getConnectedPeers(): string[] {
+  return native.getConnectedPeers();
 }
 
 export function getOriginHash(): string {

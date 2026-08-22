@@ -1,12 +1,11 @@
 package com.ziro.relay
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import com.facebook.react.modules.core.PermissionAwareActivity
 import com.ziro.relay.adapters.service.RelayForegroundService
 import com.ziro.relay.domain.BloodRh
 import com.ziro.relay.domain.BloodType
@@ -21,15 +20,15 @@ import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
 import com.ziro.relay.domain.identityAnswerHash
-import expo.modules.kotlin.activityresult.AppContextActivityResultContract
-import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.functions.Coroutine
+import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.ListSerializer
@@ -37,6 +36,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import java.security.SecureRandom
 import java.time.LocalDate
+import kotlin.coroutines.resume
 
 /**
  * THE BRIDGE. Owner: developer A. This is the only file both developers read together.
@@ -70,19 +70,6 @@ class ZiroRelayModule : Module() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json { encodeDefaults = true; explicitNulls = true }
 
-    /**
-     * Permission launcher, wired through Expo's [RegisterActivityContracts] block below.
-     *
-     * Expo's [AppContextActivityResultLauncher] is built on a custom registry that adds a
-     * LifecycleEventObserver to the activity and dispatches results on ON_START — so unlike
-     * AndroidX's [androidx.activity.result.ActivityResultLauncher], registration is safe at
-     * any lifecycle state, including RESUMED, which is the only state a React Native activity
-     * is guaranteed to be in by the time a JS call lands. The launcher is initialized by
-     * Expo's machinery after OnCreate (RegisterActivityContracts runs on appContext.mainQueue)
-     * and before any AsyncFunction can fire from JS.
-     */
-    private lateinit var permissionLauncher: AppContextActivityResultLauncher<Array<String>, Map<String, Boolean>>
-
     override fun definition() = ModuleDefinition {
         Name("ZiroRelay")
 
@@ -93,13 +80,14 @@ class ZiroRelayModule : Module() {
             observeEngine()
         }
 
-        RegisterActivityContracts {
-            permissionLauncher = registerForActivityResult(RequestPermissionsContract)
-        }
-
         /** Current node status without waiting for an event. Used on mount. */
         Function("getStatus") {
             RelayContainer.engine.status.value.name
+        }
+
+        /** Snapshot connected peers so the UI can recover after its JS listener was inactive. */
+        Function("getConnectedPeers") {
+            RelayContainer.transport.peers.value.map { it.value }
         }
 
         Function("getOriginHash") {
@@ -117,13 +105,7 @@ class ZiroRelayModule : Module() {
             RelayContainer.profiles.save(input.toDomain(RelayContainer.profiles.get()))
         }
 
-        // Dot call with an explicit type argument: the no-arg lambda is otherwise ambiguous
-        // between the zero- and one-parameter Coroutine overloads. Awaiting the permission
-        // request forces this to be a Coroutine — without it, start() would return before
-        // the user responded to the dialog and Nearby Connections would silently no-op.
         AsyncFunction("start").Coroutine<Unit> {
-            // Ensure runtime permissions first (Nearby/BT silently no-op on Android 12+
-            // without the BT trio, NEARBY_WIFI_DEVICES, FINE_LOCATION and POST_NOTIFICATIONS).
             val permResult = requestPermissionsInternal()
             val denied = permResult["denied"].orEmpty()
             if (denied.isNotEmpty()) {
@@ -135,7 +117,7 @@ class ZiroRelayModule : Module() {
             // Engine runs inside the foreground service so it survives JS going background.
             val context = RelayContainer.context()
             ContextCompat.startForegroundService(context, Intent(context, RelayForegroundService::class.java))
-        }
+        }.runOnQueue(Queues.MAIN)
 
         AsyncFunction("stop") {
             RelayContainer.context().stopService(Intent(RelayContainer.context(), RelayForegroundService::class.java))
@@ -154,11 +136,9 @@ class ZiroRelayModule : Module() {
          * internally and throws on denial — only call it directly if you want to preflight
          * before showing the start button.
          */
-        // Dot call with explicit type argument for the same no-arg-lambda ambiguity reason
-        // as getLedger below.
         AsyncFunction("requestPermissions").Coroutine<String> {
             encodePermissionResult(requestPermissionsInternal())
-        }
+        }.runOnQueue(Queues.MAIN)
 
         /** Returns the created telegram as a wire JSON string. */
         AsyncFunction("sendTelegram").Coroutine<String, String> { draftJson ->
@@ -192,9 +172,8 @@ class ZiroRelayModule : Module() {
     }
 
     /**
-     * Translates domain events into the single JS event. Runs for the life of the process,
-     * not the life of a screen, so nothing is missed while JS is asleep — the ledger is
-     * always the source of truth and getLedger() reconciles on mount.
+     * Translates domain events into the single JS event for the life of the process. The
+     * ledger and getConnectedPeers() reconcile state after a transient JS listener is inactive.
      */
     private fun observeEngine() {
         scope.launch {
@@ -208,10 +187,11 @@ class ZiroRelayModule : Module() {
     }
 
     /**
-     * Resolves the runtime permissions required for Nearby Connections over BLE + Wi-Fi
-     * Direct, plus the foreground service notification. Returns the (granted, denied) split
-     * BEFORE any serialization, so both `requestPermissions` (JSON to JS) and `start` (raw
-     * map for the throw decision) can share the same logic.
+     * Resolves Nearby runtime permissions through Expo's installed PermissionsService. Its
+     * PermissionAwareActivity callback is the path ReactActivity forwards after Android shows
+     * the system dialog, unlike the generic activity-result route that only receives activity
+     * results. This function is invoked on Queues.MAIN so the request originates from the
+     * foreground ReactActivity.
      */
     private suspend fun requestPermissionsInternal(): Map<String, List<String>> {
         val context = RelayContainer.context()
@@ -226,12 +206,31 @@ class ZiroRelayModule : Module() {
             return mapOf("granted" to alreadyGranted.distinct(), "denied" to emptyList())
         }
 
-        val result = permissionLauncher.launch(missing.toTypedArray())
-        val newlyGranted = result.filterValues { it }.keys
-        val denied = result.filterValues { !it }.keys
+        val activity = appContext.currentActivity
+        if (activity == null || activity.isFinishing || activity.isDestroyed || activity !is PermissionAwareActivity) {
+            throw IllegalStateException(
+                "Permissions can only be requested while the ZIRO app is open in the foreground. " +
+                    "Return to the app and tap Grant permissions again.",
+            )
+        }
+        val permissions = appContext.permissions
+            ?: throw IllegalStateException("Expo permissions service is unavailable in this app build.")
+
+        suspendCancellableCoroutine<Unit> { continuation ->
+            permissions.askForPermissions({
+                if (continuation.isActive) continuation.resume(Unit)
+            }, *missing.toTypedArray())
+        }
+
+        val granted = perms.filter {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+        val denied = perms.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
         return mapOf(
-            "granted" to (alreadyGranted + newlyGranted).distinct(),
-            "denied" to denied.toList(),
+            "granted" to granted.distinct(),
+            "denied" to denied.distinct(),
         )
     }
 
@@ -400,18 +399,3 @@ private data class ProfileInput(
 
 private fun randomSecret(): String = ByteArray(32).also(SecureRandom()::nextBytes)
     .joinToString("") { "%02x".format(it) }
-
-private object RequestPermissionsContract :
-    AppContextActivityResultContract<Array<String>, Map<String, Boolean>> {
-
-    private val delegate = ActivityResultContracts.RequestMultiplePermissions()
-
-    override fun createIntent(context: Context, input: Array<String>): Intent =
-        delegate.createIntent(context, input)
-
-    override fun parseResult(
-        input: Array<String>,
-        resultCode: Int,
-        intent: Intent?,
-    ): Map<String, Boolean> = delegate.parseResult(resultCode, intent)
-}

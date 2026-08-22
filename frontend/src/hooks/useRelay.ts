@@ -23,13 +23,19 @@ function toPermissionResult(perms: RelayPermissions): PermissionResult {
   return { granted, denied };
 }
 
+interface PeerConnectionNotice {
+  peerId: string;
+  sequence: number;
+}
+
 /**
  * The only place the UI talks to the engine. Owner: developer B.
  *
  * Note the reconciliation on every event rather than appending in JS. The engine keeps
  * running while the JS thread is asleep, so events emitted during that window are gone
- * forever — but the Kotlin ledger is not. Treating the ledger as the source of truth and
- * events only as a "something changed" signal makes a missed event harmless.
+ * forever — but the Kotlin ledger and connected-peer snapshot are not. Treating durable
+ * state as the source of truth and events only as a "something changed" signal makes a
+ * missed event harmless.
  *
  * Do not build a parallel list in React state. That is how the two views drift.
  */
@@ -46,19 +52,37 @@ export function useRelay() {
   const [relayEvents, setRelayEvents] = useState<RelayEvent[]>([]);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastPeerConnection, setLastPeerConnection] = useState<PeerConnectionNotice | null>(null);
   const mounted = useRef(true);
+  const peerConnectionSequence = useRef(0);
 
   const refresh = useCallback(async () => {
     const ledger = await client.getLedger();
     if (mounted.current) setTelegrams(ledger);
   }, [client]);
 
+  const syncRuntimeState = useCallback(() => {
+    const nextStatus = client.getStatus();
+    const nextPermissions = toPermissionResult(client.getPermissions());
+    const nextPeers = client.getConnectedPeers();
+    if (!mounted.current) return;
+
+    setStatus(nextStatus);
+    setPermissions(nextPermissions);
+    setPeers(nextPeers);
+
+    const firstConnectedPeer = nextPeers[0];
+    if (firstConnectedPeer) {
+      setLastPeerConnection((current) => {
+        if (current && nextPeers.includes(current.peerId)) return current;
+        peerConnectionSequence.current += 1;
+        return { peerId: firstConnectedPeer, sequence: peerConnectionSequence.current };
+      });
+    }
+  }, [client]);
+
   useEffect(() => {
     mounted.current = true;
-    setStatus(client.getStatus());
-    setPermissions(toPermissionResult(client.getPermissions()));
-    void refresh();
-    void client.getProfile().then(setProfile).catch((reason: unknown) => setError(messageFor(reason)));
 
     const subscription = client.addRelayListener((event) => {
       setRelayEvents((current) => [event, ...current].slice(0, 20));
@@ -66,9 +90,12 @@ export function useRelay() {
         case 'STATUS_CHANGED':
           setStatus(event.status);
           break;
-        case 'PEER_CONNECTED':
+        case 'PEER_CONNECTED': {
+          peerConnectionSequence.current += 1;
+          setLastPeerConnection({ peerId: event.peerId, sequence: peerConnectionSequence.current });
           setPeers((current) => [...new Set([...current, event.peerId])]);
           break;
+        }
         case 'PEER_DISCONNECTED':
           setPeers((current) => current.filter((p) => p !== event.peerId));
           break;
@@ -95,8 +122,15 @@ export function useRelay() {
           break;
       }
     });
+
+    syncRuntimeState();
+    void refresh();
+    void client.getProfile().then(setProfile).catch((reason: unknown) => setError(messageFor(reason)));
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') setPermissions(toPermissionResult(client.getPermissions()));
+      if (nextState === 'active') {
+        syncRuntimeState();
+        void refresh();
+      }
     });
 
     return () => {
@@ -104,7 +138,7 @@ export function useRelay() {
       subscription.remove();
       appStateSubscription.remove();
     };
-  }, [client, refresh]);
+  }, [client, refresh, syncRuntimeState]);
 
   return {
     status,
@@ -119,6 +153,7 @@ export function useRelay() {
     relayEvents,
     profile,
     error,
+    lastPeerConnection,
     start: useCallback(async () => {
       try {
         await client.start();
@@ -131,9 +166,16 @@ export function useRelay() {
     }, [client]),
     stop: client.stop,
     requestPermissions: useCallback(async () => {
-      const result = await client.requestPermissions();
-      setPermissions(result);
-      return result;
+      try {
+        const result = await client.requestPermissions();
+        setPermissions(result);
+        setError(null);
+        return result;
+      } catch (reason: unknown) {
+        const message = messageFor(reason);
+        setError(message);
+        throw new Error(message);
+      }
     }, [client]),
     saveProfile: useCallback(async (nextProfile: ProfileInput) => {
       try {

@@ -65,6 +65,7 @@ export function createFakeRelayClient(): RelayClient {
   let status: EngineStatus = 'IDLE';
   let profile = DEFAULT_PROFILE;
   const ledger = new Map<string, LedgerEntry>();
+  const connectedPeers = new Set<string>();
   const listeners = new Set<(event: RelayEvent) => void>();
   const timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -99,6 +100,7 @@ export function createFakeRelayClient(): RelayClient {
       timers.push(
         setTimeout(() => emit({ type: 'PEER_DISCOVERED', peerId: 'fake-peer-01' }), 800),
         setTimeout(() => {
+          connectedPeers.add('fake-peer-01');
           emit({ type: 'PEER_CONNECTED', peerId: 'fake-peer-01' });
           setStatus('SYNCING');
         }, 1600),
@@ -110,10 +112,12 @@ export function createFakeRelayClient(): RelayClient {
     async stop() {
       timers.forEach(clearTimeout);
       timers.length = 0;
+      connectedPeers.clear();
       setStatus('IDLE');
     },
 
     getPermissions: () => ({ fake: true }),
+    getConnectedPeers: () => [...connectedPeers],
     async requestPermissions() {
       // Fake: pretend the relevant permissions are already granted so the UI keeps working.
       return { granted: ['FAKE'], denied: [] };
