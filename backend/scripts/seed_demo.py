@@ -16,14 +16,17 @@ from __future__ import annotations
 
 import argparse
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import h3
 
 from app.constants import H3_CELL_RESOLUTION
 from app.database import Base, SessionLocal, engine
 from app.models.analytics import ReceivedCell, Report, ReportSource
+from app.models.case import Case
 from app.models.event import Event, EventType
+from app.models.person import BloodRh, BloodType, Disability, DocType, Person, PersonStatus
+from app.models.telegram import Telegram
 
 # Design D3: fixed demo event id; every seed write is scoped to it.
 DEMO_EVENT_ID = "DEMO-EARTHQUAKE001"
@@ -48,6 +51,15 @@ CELL_SPECS = [
     (0.01, 0.01, 6.0, 5, 8.0, 7),
     (-0.01, -0.01, 3.5, 3, 2.0, 2),
     (0.01, -0.01, 5.0, 4, 3.5, 3),
+]
+
+# Ordered by dispatch/upload priority: a missing response is handled first,
+# followed by a conscious person requesting help, then a confirmed SAFE person.
+# (user_id, full_name, status, priority_rank, severity, dlat, dlng)
+PERSON_SPECS = [
+    ("demo-emergency-001", "Demo Emergency", PersonStatus.EMERGENCY, 3, 5, 0.00, 0.00),
+    ("demo-need-help-001", "Demo Need Help", PersonStatus.NEED_HELP, 2, 4, -0.01, 0.00),
+    ("demo-safe-001", "Demo Safe", PersonStatus.SAFE, 1, 1, 0.01, 0.01),
 ]
 
 # (source, minutes_after_occurred_at, title, summary, recommendations, figures)
@@ -78,7 +90,9 @@ REPORT_TEMPLATES = [
 ]
 
 
-def build_rows(now: datetime) -> tuple[Event, list[ReceivedCell], list[Report]]:
+def build_rows(
+    now: datetime,
+) -> tuple[Event, list[Person], list[Telegram], list[Case], list[ReceivedCell], list[Report]]:
     """Build the full demo dataset deterministically from ``now``."""
     occurred_at = now.replace(second=0, microsecond=0)
     window_len = timedelta(minutes=10)
@@ -87,6 +101,64 @@ def build_rows(now: datetime) -> tuple[Event, list[ReceivedCell], list[Report]]:
     event = Event(event_id=DEMO_EVENT_ID, event_type=EventType.EARTHQUAKE,
                   occurred_at=occurred_at,
                   closed_at=None)  # open event: required by both GET endpoints
+
+    people: list[Person] = []
+    telegrams: list[Telegram] = []
+    cases: list[Case] = []
+    for index, (user_id, full_name, status, priority_rank, severity, dlat, dlng) in enumerate(PERSON_SPECS, 1):
+        telegram_id = uuid.UUID(f"00000000-0000-4000-8000-{index:012d}")
+        lat = BOGOTA_LAT + dlat
+        lng = BOGOTA_LNG + dlng
+        people.append(Person(
+            user_id=user_id,
+            full_name=full_name,
+            doc_type=DocType.CC,
+            doc_number=f"DEMO-{index:03d}",
+            birth_date=date(1990 + index, 1, 1),
+            blood_type=BloodType.O,
+            blood_rh=BloodRh.POSITIVE,
+            allergies=[],
+            chronic_conditions=[],
+            medications=[],
+            disability=Disability.NONE,
+            is_pregnant=False,
+            question_id=f"demo-question-{index}",
+            answer_hash=f"{index:x}" * 64,
+            device_secret=f"demo-device-secret-{index}",
+        ))
+        telegrams.append(Telegram(
+            id=telegram_id,
+            event_id=DEMO_EVENT_ID,
+            user_id=user_id,
+            status=status,
+            event_type=EventType.EARTHQUAKE,
+            lat=lat,
+            lng=lng,
+            origin_ts=occurred_at + timedelta(minutes=index),
+            severity=severity,
+            hop=index - 1,
+            ttl=8 - (index - 1),
+            origin_device=f"demo-device-{index}",
+            payload={
+                "id": str(telegram_id),
+                "user_id": user_id,
+                "event_id": DEMO_EVENT_ID,
+                "status": status.value,
+                "timestamp": int((occurred_at + timedelta(minutes=index)).timestamp()),
+                "severity": severity,
+                "location": {"lat": lat, "lng": lng},
+                "hop": index - 1,
+                "ttl": 8 - (index - 1),
+                "origin": f"demo-device-{index}",
+            },
+        ))
+        cases.append(Case(
+            event_id=DEMO_EVENT_ID,
+            user_id=user_id,
+            current_status=status,
+            last_telegram_id=telegram_id,
+            priority_rank=priority_rank,
+        ))
 
     cells: list[ReceivedCell] = []
     seen_h3: set[str] = set()
@@ -112,7 +184,7 @@ def build_rows(now: datetime) -> tuple[Event, list[ReceivedCell], list[Report]]:
         for source, offset_min, title, summary, recommendations, figures
         in REPORT_TEMPLATES
     ]
-    return event, cells, reports
+    return event, people, telegrams, cases, cells, reports
 
 
 def seed(session_sessionmaker=SessionLocal, target_engine=engine) -> dict[str, int]:
@@ -121,20 +193,36 @@ def seed(session_sessionmaker=SessionLocal, target_engine=engine) -> dict[str, i
 
     with session_sessionmaker() as session:
         with session.begin():
-            # reports FK is RESTRICT -> delete BEFORE the event; received_cells
-            # FK is CASCADE.
+            # RESTRICT FKs must be deleted before the event. Demo people are
+            # scoped by their stable user ids and deleted after their telegrams.
+            session.query(Case).where(Case.event_id == DEMO_EVENT_ID).delete()
+            session.query(Telegram).where(Telegram.event_id == DEMO_EVENT_ID).delete()
             session.query(Report).where(Report.event_id == DEMO_EVENT_ID).delete()
             session.query(ReceivedCell).where(ReceivedCell.event_id == DEMO_EVENT_ID).delete()
             session.query(Event).where(Event.event_id == DEMO_EVENT_ID).delete()
+            session.query(Person).where(
+                Person.user_id.in_([spec[0] for spec in PERSON_SPECS])
+            ).delete(synchronize_session=False)
 
-            event, cells, reports = build_rows(datetime.now(timezone.utc))
+            event, people, telegrams, cases, cells, reports = build_rows(datetime.now(timezone.utc))
 
             session.add(event)
             session.flush()  # ensure event exists before FK-dependent rows (PostgreSQL enforces FKs)
+            session.add_all(people)
+            session.flush()  # ensure people exist before FK-dependent telegrams and cases
+            session.add_all(telegrams)
+            session.add_all(cases)
             session.add_all(cells)
             session.add_all(reports)
 
-    return {"events": 1, "cells": len(cells), "reports": len(reports)}
+    return {
+        "events": 1,
+        "people": len(people),
+        "telegrams": len(telegrams),
+        "cases": len(cases),
+        "cells": len(cells),
+        "reports": len(reports),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -143,7 +231,8 @@ def main(argv: list[str] | None = None) -> int:
             "Seed the Replica database with demo dashboard data: one open "
             f"earthquake event ({DEMO_EVENT_ID}), H3 res-{H3_CELL_RESOLUTION} "
             "cells around Bogotá with varied intensities over two time "
-            "windows, and AI-style reports (schema v1)."
+            "windows, priority-ordered EMERGENCY/NEED_HELP/SAFE people and "
+            "telegrams, and AI-style reports (schema v1)."
         ),
         epilog=(
             "IDEMPOTENCY (design D3): re-running this command IS the reset. If "
@@ -158,7 +247,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.parse_args(argv)
 
     counts = seed()
-    print(f"Demo seed complete: event {DEMO_EVENT_ID}, {counts['cells']} received_cells, {counts['reports']} reports.")
+    print(
+        f"Demo seed complete: event {DEMO_EVENT_ID}, {counts['people']} people, "
+        f"{counts['telegrams']} telegrams, {counts['cases']} cases, "
+        f"{counts['cells']} received_cells, {counts['reports']} reports."
+    )
     return 0
 
 

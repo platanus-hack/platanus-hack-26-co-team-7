@@ -7,6 +7,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.1",
     "fastapi>=0.115",
+    "scalar-fastapi>=1.8.2",
     "uvicorn[standard]>=0.30",
     "h3>=4.1",
     "python-dotenv>=1.0",

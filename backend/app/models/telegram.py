@@ -56,7 +56,6 @@ class Telegram(Base):
         ForeignKey("persons.user_id", ondelete="RESTRICT"),
         nullable=False,
     )
-
     status: Mapped[PersonStatus] = mapped_column(
         Enum(PersonStatus, native_enum=False, length=16), nullable=False
     )

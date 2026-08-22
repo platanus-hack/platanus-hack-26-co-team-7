@@ -1,7 +1,7 @@
 """Application settings.
 
-Loads ``DATABASE_URL`` and ``BACKEND_CORS_ORIGINS`` exclusively from
-environment variables / ``backend/.env`` (python-dotenv, never committed).
+Loads ``DATABASE_URL`` exclusively from environment variables / ``backend/.env``
+(python-dotenv, never committed).
 Hardcoded defaults are forbidden — missing ``DATABASE_URL`` fails fast.
 Only PostgreSQL URLs are accepted (design: no SQLite fallback at runtime).
 """
@@ -12,6 +12,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.cors import get_allowed_origins
+
 # Load backend/.env if present. Kept optional at import time so tests that
 # inject env vars without dotenv still work; python-dotenv is a runtime
 # dependency (see pyproject.toml).
@@ -21,20 +23,6 @@ try:
     load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 except ModuleNotFoundError:  # pragma: no cover - only during bare installs
     pass
-
-# Comma-separated list of allowed CORS origins for the static web dashboard
-# (openspec/changes/dashboard-web/design.md D5). Wildcard "*" with
-# credentials is forbidden by the public-api-readonly spec.
-_DEFAULT_CORS_ORIGINS = ("http://localhost:5173",)
-
-
-def _parse_cors_origins(raw: str | None) -> tuple[str, ...]:
-    """Parse BACKEND_CORS_ORIGINS ("origin1,origin2") into a clean tuple."""
-    if not raw:
-        return _DEFAULT_CORS_ORIGINS
-    parsed = tuple(origin.strip() for origin in raw.split(",") if origin.strip())
-    return parsed if parsed else _DEFAULT_CORS_ORIGINS
-
 
 def _require_database_url() -> str:
     raw = os.environ.get("DATABASE_URL")
@@ -62,5 +50,5 @@ class Settings:
 
 settings = Settings(
     database_url=_require_database_url(),
-    cors_origins=_parse_cors_origins(os.environ.get("BACKEND_CORS_ORIGINS")),
+    cors_origins=get_allowed_origins(),
 )

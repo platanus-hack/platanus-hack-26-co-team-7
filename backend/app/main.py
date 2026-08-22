@@ -13,44 +13,44 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from scalar_fastapi import get_scalar_api_reference
 
-from app.config import settings
-from app.database import Base, engine
+from app.cors import configure_cors
 from app.routers import heatmap, reports
 from app.routers import ws as ws_router
+from app.modules.gateway_sync.router import router as gateway_sync_router
+from app.modules.mobile_identity.router import router as mobile_identity_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Import registers every ORM model on Base.metadata (idempotent create).
-    import app.models  # noqa: F401
-
-    Base.metadata.create_all(bind=engine)
     yield
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Replica Backend",
-        description="Emergency communication network - public read-only API",
+        description="Emergency communication network API",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
     )
 
-    # Explicit origin allowlist; wildcard with credentials is forbidden by
-    # the public-api-readonly spec.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=list(settings.cors_origins),
-        allow_credentials=False,
-        allow_methods=["GET", "OPTIONS"],
-        allow_headers=["*"],
-    )
+    @app.get("/docs", include_in_schema=False)
+    async def scalar_docs():
+        return get_scalar_api_reference(
+            openapi_url=app.openapi_url,
+            title="Replica API Reference",
+        )
+
+    configure_cors(app)
 
     app.include_router(heatmap.router)
     app.include_router(reports.router)
     app.include_router(ws_router.router)
+    app.include_router(mobile_identity_router)
+    app.include_router(gateway_sync_router)
 
     return app
 

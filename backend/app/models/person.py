@@ -138,7 +138,6 @@ class Person(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-
 class EmergencyContact(Base):
     """Repeating {name, phone, relationship} group from the onboarding profile.
 
