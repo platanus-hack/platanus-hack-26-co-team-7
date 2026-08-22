@@ -15,7 +15,7 @@ object TelegramCodec {
     private val json = Json {
         encodeDefaults = true
         ignoreUnknownKeys = true // forward compatibility with a future v2 field
-        explicitNulls = false
+        explicitNulls = true
     }
 
     fun encode(t: Telegram): ByteArray =

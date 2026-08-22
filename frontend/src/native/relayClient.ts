@@ -2,6 +2,7 @@ import { NativeModulesProxy } from 'expo-modules-core';
 import { Platform } from 'react-native';
 import type {
   EngineStatus,
+  LedgerEntry,
   PermissionResult,
   ProfileInput,
   RelayEvent,
@@ -39,7 +40,7 @@ export interface RelayClient {
   getProfile(): Promise<ProfileInput>;
   saveProfile(profile: ProfileInput): Promise<void>;
   sendTelegram(draft: TelegramDraft): Promise<Telegram>;
-  getLedger(): Promise<Telegram[]>;
+  getLedger(): Promise<LedgerEntry[]>;
   addRelayListener(listener: (event: RelayEvent) => void): { remove(): void };
 }
 

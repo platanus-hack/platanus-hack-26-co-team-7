@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import com.ziro.relay.adapters.profile.HardcodedProfileStore
 import com.ziro.relay.adapters.service.RelayForegroundService
 import com.ziro.relay.domain.BloodRh
 import com.ziro.relay.domain.BloodType
@@ -31,10 +30,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.time.LocalDate
 
 /**
  * THE BRIDGE. Owner: developer A. This is the only file both developers read together.
@@ -66,7 +68,7 @@ import kotlinx.serialization.json.Json
 class ZiroRelayModule : Module() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val json = Json { encodeDefaults = true; explicitNulls = false }
+    private val json = Json { encodeDefaults = true; explicitNulls = true }
 
     /**
      * Permission launcher, wired through Expo's [RegisterActivityContracts] block below.
@@ -105,7 +107,8 @@ class ZiroRelayModule : Module() {
         }
 
         AsyncFunction("getProfile").Coroutine<String> {
-            profileWire(RelayContainer.profiles.get() ?: HardcodedProfileStore.DEMO_PROFILE)
+            RelayContainer.profiles.get()?.let(::profileWire)
+                ?: json.encodeToString(ProfileInput.serializer(), ProfileInput.blank("anon-${RelayContainer.originHash}"))
         }
 
         AsyncFunction("saveProfile").Coroutine<Unit, String> { profileJson ->
@@ -180,10 +183,11 @@ class ZiroRelayModule : Module() {
         // Dot call with an explicit type argument: the no-arg lambda is otherwise ambiguous
         // between the zero- and one-parameter Coroutine overloads.
         AsyncFunction("getLedger").Coroutine<String> {
-            json.encodeToString(
-                ListSerializer(Telegram.serializer()),
-                RelayContainer.ledger.all(),
-            )
+            val entries = RelayContainer.ledger.all().map { telegram ->
+                val state = RelayContainer.ledger.localState(telegram.id)
+                LedgerEntryWire(telegram, state?.receivedFrom?.value, state?.deliveredTo?.map { it.value }.orEmpty())
+            }
+            json.encodeToString(ListSerializer(LedgerEntryWire.serializer()), entries)
         }
     }
 
@@ -195,6 +199,9 @@ class ZiroRelayModule : Module() {
     private fun observeEngine() {
         scope.launch {
             RelayContainer.bus.events.collect { event ->
+                if (event is RelayEvent.TelegramDelivered) {
+                    RelayContainer.ledger.markDelivered(event.id, event.to)
+                }
                 sendEvent(EVENT_RELAY, event.toJsPayload())
             }
         }
@@ -319,6 +326,13 @@ private data class TelegramDraft(
 )
 
 @Serializable
+private data class LedgerEntryWire(
+    val telegram: Telegram,
+    val receivedFrom: String? = null,
+    val deliveredTo: List<String> = emptyList(),
+)
+
+@Serializable
 private data class ProfileContact(val name: String, val phone: String, val relationship: String)
 
 @Serializable
@@ -339,12 +353,19 @@ private data class ProfileInput(
     val eps: String? = null,
     val emergencyContacts: List<ProfileContact> = emptyList(),
     val questionId: String,
+    /** Save-only plaintext. Kotlin hashes it before persistence and never returns it. */
+    val identityAnswer: String? = null,
 ) {
     fun toDomain(current: Profile?): Profile {
         require(userId.isNotBlank() && fullName.isNotBlank() && docNumber.isNotBlank() && birthDate.isNotBlank() && questionId.isNotBlank()) {
             "Profile identity, birth date, document and verification question are required"
         }
-        val privateFields = current ?: HardcodedProfileStore.DEMO_PROFILE
+        require(runCatching { LocalDate.parse(birthDate.trim()) }.isSuccess) { "Birth date must be ISO-8601 (YYYY-MM-DD)" }
+        require(weightKg == null || weightKg > 0) { "Weight must be a positive number" }
+        val answerHash = identityAnswer?.trim()?.takeIf(String::isNotBlank)?.let(::sha256)
+            ?: current?.answerHash
+            ?: throw IllegalArgumentException("An identity answer is required the first time you save your profile")
+        val deviceSecret = current?.deviceSecret ?: randomSecret()
         return Profile(
             userId.trim(), fullName.trim(), docType, docNumber.trim(), birthDate.trim(), bloodType, bloodRh,
             allergies.map(String::trim).filter(String::isNotBlank),
@@ -354,7 +375,7 @@ private data class ProfileInput(
             emergencyContacts
                 .filter { it.name.isNotBlank() && it.phone.isNotBlank() }
                 .map { EmergencyContact(it.name.trim(), it.phone.trim(), it.relationship.trim()) },
-            questionId.trim(), privateFields.answerHash, privateFields.deviceSecret,
+            questionId.trim(), answerHash, deviceSecret,
         )
     }
 
@@ -367,8 +388,20 @@ private data class ProfileInput(
             profile.emergencyContacts.map { ProfileContact(it.name, it.phone, it.relationship) },
             profile.questionId,
         )
+
+        fun blank(userId: String) = ProfileInput(
+            userId = userId, fullName = "", docType = DocType.CC, docNumber = "", birthDate = "",
+            bloodType = BloodType.O, bloodRh = BloodRh.POSITIVE, questionId = "",
+        )
     }
 }
+
+private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+    .digest(value.toByteArray(Charsets.UTF_8))
+    .joinToString("") { "%02x".format(it) }
+
+private fun randomSecret(): String = ByteArray(32).also(SecureRandom()::nextBytes)
+    .joinToString("") { "%02x".format(it) }
 
 private object RequestPermissionsContract :
     AppContextActivityResultContract<Array<String>, Map<String, Boolean>> {

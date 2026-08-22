@@ -18,6 +18,7 @@ import com.ziro.relay.application.IngestTelegram
 import com.ziro.relay.application.IngestResult
 import com.ziro.relay.domain.PeerId
 import com.ziro.relay.domain.RelayEvent
+import com.ziro.relay.domain.RelayEnvelopeCodec
 import com.ziro.relay.ports.EventBus
 import com.ziro.relay.ports.PeerTransport
 import kotlinx.coroutines.CoroutineScope
@@ -26,13 +27,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * SCAFFOLD - developer A implements this in phase 2. Owner: developer A.
- *
  * The only place in the codebase allowed to mention Nearby Connections. Everything above
  * PeerTransport stays unaware that this class exists, which is what lets B build the
  * whole receive path against FakeTransport while this file is still empty.
@@ -69,8 +66,9 @@ class NearbyTransport(
     private val _peers = MutableStateFlow<Set<PeerId>>(emptySet())
     override val peers: StateFlow<Set<PeerId>> = _peers.asStateFlow()
     private val client = Nearby.getConnectionsClient(context.applicationContext)
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    /** Nearby endpoint IDs are connection-local; endpoint names are our persistent node IDs. */
     private val endpointNames = ConcurrentHashMap<String, String>()
+    private val connectedEndpoints = ConcurrentHashMap<String, String>()
     private val pending = ConcurrentHashMap<String, ByteArray>()
     @Volatile private var running = false
 
@@ -93,6 +91,7 @@ class NearbyTransport(
         running = false
         pending.clear()
         endpointNames.clear()
+        connectedEndpoints.clear()
         _peers.value = emptySet()
         try {
             client.stopAdvertising()
@@ -105,7 +104,10 @@ class NearbyTransport(
 
     override fun send(peer: PeerId, bytes: ByteArray) {
         val messageId = telegramId(bytes) ?: return radioError("Refusing malformed outbound telegram")
-        val envelope = encode(WireEnvelope.telegram(messageId, bytes.toString(Charsets.UTF_8)))
+        val envelope = RelayEnvelopeCodec.telegram(messageId, bytes.toString(Charsets.UTF_8))
+        if (envelope.size > RelayEnvelopeCodec.MAX_BYTES) {
+            return radioError("Refusing relay payload larger than ${RelayEnvelopeCodec.MAX_BYTES} bytes")
+        }
         val key = deliveryKey(peer, messageId)
         pending[key] = envelope
         sendEnvelope(peer, messageId, envelope, attempt = 0)
@@ -129,14 +131,16 @@ class NearbyTransport(
     private val discoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
             endpointNames[endpointId] = info.endpointName
-            bus.emit(RelayEvent.PeerDiscovered(PeerId(endpointId)))
+            bus.emit(RelayEvent.PeerDiscovered(PeerId(info.endpointName)))
             if (shouldInitiateTo(info.endpointName)) {
                 requestConnection(endpointId)
             }
         }
 
         override fun onEndpointLost(endpointId: String) {
-            endpointNames.remove(endpointId)
+            // Discovery may stop seeing an endpoint while its accepted connection remains
+            // usable. Keep its stable identity until the lifecycle callback disconnects it.
+            if (!connectedEndpoints.containsValue(endpointId)) endpointNames.remove(endpointId)
         }
     }
 
@@ -153,17 +157,23 @@ class NearbyTransport(
 
         override fun onConnectionResult(endpointId: String, resolution: ConnectionResolution) {
             if (resolution.status.statusCode == CommonStatusCodes.SUCCESS) {
-                val peer = PeerId(endpointId)
+                val peer = peerFor(endpointId) ?: run {
+                    radioError("Connected Nearby endpoint has no node identity")
+                    client.disconnectFromEndpoint(endpointId)
+                    return
+                }
+                connectedEndpoints[peer.value] = endpointId
                 _peers.value = _peers.value + peer
                 bus.emit(RelayEvent.PeerConnected(peer))
+                resendPending(peer)
             } else {
                 radioError("Connection rejected: ${resolution.status.statusMessage ?: resolution.status.statusCode}")
             }
         }
 
         override fun onDisconnected(endpointId: String) {
-            val peer = PeerId(endpointId)
-            if (peer in _peers.value) {
+            val peer = peerFor(endpointId)
+            if (peer != null && connectedEndpoints.remove(peer.value, endpointId)) {
                 _peers.value = _peers.value - peer
                 bus.emit(RelayEvent.PeerDisconnected(peer))
             }
@@ -174,15 +184,19 @@ class NearbyTransport(
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             val bytes = payload.asBytes() ?: return
-            val envelope = decode(bytes) ?: return radioError("Received malformed relay envelope")
-            val peer = PeerId(endpointId)
+            if (bytes.size > RelayEnvelopeCodec.MAX_BYTES) {
+                return radioError("Received relay payload larger than ${RelayEnvelopeCodec.MAX_BYTES} bytes")
+            }
+            val envelope = RelayEnvelopeCodec.decode(bytes) ?: return radioError("Received malformed relay envelope")
+            val peer = peerFor(endpointId) ?: return radioError("Received payload from an unidentified endpoint")
             when (envelope.kind) {
-                WireEnvelope.KIND_ACK -> {
+                "ack" -> {
                     val id = envelope.messageId
-                    pending.remove(deliveryKey(peer, id))
-                    bus.emit(RelayEvent.TelegramDelivered(id, peer))
+                    if (pending.remove(deliveryKey(peer, id)) != null) {
+                        bus.emit(RelayEvent.TelegramDelivered(id, peer))
+                    }
                 }
-                WireEnvelope.KIND_TELEGRAM -> {
+                "telegram" -> {
                     val wire = envelope.telegram ?: return radioError("Received empty telegram envelope")
                     scope.launch {
                         when (val result = ingest.handle(wire.toByteArray(Charsets.UTF_8), peer)) {
@@ -211,8 +225,9 @@ class NearbyTransport(
 
     private fun sendEnvelope(peer: PeerId, messageId: String, envelope: ByteArray, attempt: Int) {
         if (!running || peer !in _peers.value) return
+        val endpointId = connectedEndpoints[peer.value] ?: return
         try {
-            client.sendPayload(peer.value, Payload.fromBytes(envelope))
+            client.sendPayload(endpointId, Payload.fromBytes(envelope))
                 .addOnSuccessListener {
                     bus.emit(RelayEvent.TelegramSent(messageId, peer))
                     if (attempt < MAX_RETRIES) {
@@ -223,16 +238,38 @@ class NearbyTransport(
                         }
                     }
                 }
-                .addOnFailureListener { radioError("Payload send failed: ${it.message ?: "unknown error"}") }
+                .addOnFailureListener {
+                    radioError("Payload send failed: ${it.message ?: "unknown error"}")
+                    scheduleRetry(peer, messageId, attempt)
+                }
         } catch (error: SecurityException) {
             radioError("Unable to send Nearby payload: ${error.message ?: "security exception"}")
+            scheduleRetry(peer, messageId, attempt)
+        }
+    }
+
+    private fun resendPending(peer: PeerId) {
+        pending.forEach { (key, envelope) ->
+            val prefix = "${peer.value}:"
+            if (key.startsWith(prefix)) {
+                sendEnvelope(peer, key.removePrefix(prefix), envelope, attempt = 0)
+            }
+        }
+    }
+
+    private fun scheduleRetry(peer: PeerId, messageId: String, attempt: Int) {
+        if (attempt >= MAX_RETRIES) return
+        scope.launch {
+            delay(RETRY_DELAY_MS)
+            pending[deliveryKey(peer, messageId)]?.let { sendEnvelope(peer, messageId, it, attempt + 1) }
         }
     }
 
     private fun sendAck(peer: PeerId, messageId: String) {
+        val endpointId = connectedEndpoints[peer.value] ?: return
         if (peer !in _peers.value) return
         try {
-            client.sendPayload(peer.value, Payload.fromBytes(encode(WireEnvelope.ack(messageId))))
+            client.sendPayload(endpointId, Payload.fromBytes(RelayEnvelopeCodec.ack(messageId)))
         } catch (error: SecurityException) {
             radioError("Unable to acknowledge telegram: ${error.message ?: "security exception"}")
         }
@@ -242,31 +279,13 @@ class NearbyTransport(
         com.ziro.relay.domain.TelegramCodec.decode(bytes)?.id
     }.getOrNull()
 
-    private fun encode(envelope: WireEnvelope): ByteArray = json.encodeToString(WireEnvelope.serializer(), envelope).toByteArray()
-    private fun decode(bytes: ByteArray): WireEnvelope? = runCatching {
-        json.decodeFromString(WireEnvelope.serializer(), bytes.toString(Charsets.UTF_8))
-    }.getOrNull()
     private fun deliveryKey(peer: PeerId, messageId: String): String = "${peer.value}:$messageId"
+    private fun peerFor(endpointId: String): PeerId? = endpointNames[endpointId]?.let(::PeerId)
     private fun radioError(message: String) = bus.emit(RelayEvent.RadioError(message))
 
     companion object {
         const val SERVICE_ID = "ziro.relay.v1"
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 2_000L
-    }
-}
-
-@Serializable
-private data class WireEnvelope(
-    val v: Int = 1,
-    val kind: String,
-    val messageId: String,
-    val telegram: String? = null,
-) {
-    companion object {
-        const val KIND_TELEGRAM = "telegram"
-        const val KIND_ACK = "ack"
-        fun telegram(messageId: String, wire: String) = WireEnvelope(kind = KIND_TELEGRAM, messageId = messageId, telegram = wire)
-        fun ack(messageId: String) = WireEnvelope(kind = KIND_ACK, messageId = messageId)
     }
 }

@@ -80,9 +80,9 @@ export interface Telegram {
   hop: number;
   ttl: number;
   origin: string;
-  vital?: VitalBlock | null;
-  verify?: VerifyBlock | null;
-  hmac?: string | null;
+  vital: VitalBlock | null;
+  verify: VerifyBlock | null;
+  hmac: string | null;
 }
 
 export type RelayEvent =
@@ -155,6 +155,15 @@ export interface ProfileInput {
   eps: string | null;
   emergencyContacts: EmergencyContactInput[];
   questionId: string;
+  /** Save-only plaintext. Native Kotlin hashes it and never returns or persists it. */
+  identityAnswer?: string;
+}
+
+/** Local ledger metadata, never part of the Telegram wire contract. */
+export interface LedgerEntry {
+  telegram: Telegram;
+  receivedFrom: string | null;
+  deliveredTo: string[];
 }
 
 export interface TelegramDraft {
@@ -204,6 +213,9 @@ export function parseTelegram(wireJson: string): Telegram {
   requireNumber(t, 'hop');
   requireNumber(t, 'ttl');
   requireString(t, 'origin');
+  if (t.hmac !== null && typeof t.hmac !== 'string') throw new ContractDriftError('hmac', t.hmac);
+  if (t.vital !== null && typeof t.vital !== 'object') throw new ContractDriftError('vital', t.vital);
+  if (t.verify !== null && typeof t.verify !== 'object') throw new ContractDriftError('verify', t.verify);
 
   const location = t.location;
   if (
@@ -216,6 +228,23 @@ export function parseTelegram(wireJson: string): Telegram {
   }
 
   return raw as Telegram;
+}
+
+export function parseLedgerEntries(wireJson: string): LedgerEntry[] {
+  const raw: unknown = JSON.parse(wireJson);
+  if (!Array.isArray(raw)) throw new ContractDriftError('ledger', raw);
+  return raw.map((item) => {
+    if (typeof item !== 'object' || item === null) throw new ContractDriftError('ledger entry', item);
+    const entry = item as Record<string, unknown>;
+    const telegram = parseTelegram(JSON.stringify(entry.telegram));
+    if (entry.receivedFrom !== null && entry.receivedFrom !== undefined && typeof entry.receivedFrom !== 'string') {
+      throw new ContractDriftError('receivedFrom', entry.receivedFrom);
+    }
+    if (!Array.isArray(entry.deliveredTo) || !entry.deliveredTo.every((peer) => typeof peer === 'string')) {
+      throw new ContractDriftError('deliveredTo', entry.deliveredTo);
+    }
+    return { telegram, receivedFrom: (entry.receivedFrom as string | null | undefined) ?? null, deliveredTo: entry.deliveredTo as string[] };
+  });
 }
 
 function requireString(t: Record<string, unknown>, field: string): void {

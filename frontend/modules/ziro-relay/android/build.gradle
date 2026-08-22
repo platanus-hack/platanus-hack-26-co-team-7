@@ -25,7 +25,7 @@ useCoreDependencies()
 useExpoPublishing()
 
 android {
-  namespace 'com.ziro.relay'
+  namespace 'com.ziro.relay.module'
   compileSdk 35
 
   defaultConfig {
@@ -52,6 +52,7 @@ dependencies {
   implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
   implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3'
   implementation 'androidx.core:core-ktx:1.15.0'
+  implementation 'androidx.sqlite:sqlite-ktx:2.4.0'
 
   // Required for ActivityResultContracts.RequestMultiplePermissions and registerForActivityResult.
   // activity-ktx pulls both the core activity classes and the activity-result package that

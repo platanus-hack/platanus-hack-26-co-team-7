@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import {
   BLOOD_RH,
   BLOOD_TYPES,
@@ -8,7 +8,7 @@ import {
   EVENT_TYPES,
   PERSON_STATUSES,
   type ProfileInput,
-  type Telegram,
+  type LedgerEntry,
   type TelegramDraft,
 } from 'ziro-relay';
 
@@ -28,10 +28,16 @@ export function HomeScreen() {
   const [tab, setTab] = useState<Tab>(TABS.RELAY);
   const [telegramDraft, setTelegramDraft] = useState(DEFAULT_DRAFT);
   const [profileDraft, setProfileDraft] = useState<ProfileInput | null>(null);
+  const [connectedPeer, setConnectedPeer] = useState<string | null>(null);
 
   useEffect(() => {
     if (relay.profile) setProfileDraft(relay.profile);
   }, [relay.profile]);
+
+  useEffect(() => {
+    const event = relay.relayEvents.find((item) => item.type === 'PEER_CONNECTED');
+    if (event?.type === 'PEER_CONNECTED') setConnectedPeer(event.peerId);
+  }, [relay.relayEvents]);
 
   const submitTelegram = async () => {
     const validation = validateTelegram(telegramDraft);
@@ -71,6 +77,9 @@ export function HomeScreen() {
       {tab === TABS.CREATE ? <TelegramForm draft={telegramDraft} onChange={setTelegramDraft} onSubmit={() => void submitTelegram()} /> : null}
       {tab === TABS.INBOX ? <InboxPanel telegrams={relay.telegrams} deliveries={relay.deliveries} /> : null}
       {tab === TABS.PROFILE ? <ProfileForm draft={profileDraft} onChange={setProfileDraft} onSave={() => void saveProfile()} /> : null}
+      <Modal transparent visible={connectedPeer !== null} animationType="fade" onRequestClose={() => setConnectedPeer(null)}>
+        <View style={styles.modalBackdrop}><View style={styles.modalCard}><Text style={styles.heading}>Nearby device connected</Text><Text style={styles.help}>{connectedPeer} is connected. Pending telegrams are now exchanging locally.</Text><Action label="Dismiss" onPress={() => setConnectedPeer(null)} /></View></View>
+      </Modal>
     </View>
   );
 }
@@ -82,7 +91,8 @@ function RelayPanel({ relay }: RelayPanelProps) {
     <Text style={styles.heading}>Relay control</Text>
     <View style={styles.statusCard}><Text style={styles.status}>Node {relay.status}</Text><Text>{relay.peerCount} connected peer(s)</Text><Text>Permissions: {permissionsGranted ? 'ready' : 'required'}</Text></View>
     {!permissionsGranted ? <Action label="Grant nearby permissions" onPress={relay.requestPermissions} /> : null}
-    <Action label="Start offline relay" onPress={() => void relay.start()} disabled={!permissionsGranted || relay.status !== 'IDLE'} />
+    {relay.permissions.denied.length > 0 ? <Text style={styles.error}>Permissions denied: {relay.permissions.denied.join(', ')}</Text> : null}
+    <Action label="Start offline relay (requests permissions)" onPress={() => void relay.start().catch((error: unknown) => Alert.alert('Relay cannot start', messageFor(error)))} disabled={relay.status !== 'IDLE'} />
     <Action label="Stop relay" onPress={() => void relay.stop()} disabled={relay.status === 'IDLE'} secondary />
     <Text style={styles.help}>Keep Bluetooth and Wi-Fi enabled. Starting the relay makes this phone advertise and discover nearby ZIRO phones without Internet.</Text>
     {relay.lastReject ? <Text style={styles.error}>Last incoming telegram rejected: {relay.lastReject}</Text> : null}
@@ -105,18 +115,18 @@ function TelegramForm({ draft, onChange, onSubmit }: TelegramFormProps) {
   </ScrollView>;
 }
 
-interface InboxPanelProps { telegrams: Telegram[]; deliveries: Record<string, string>; }
+interface InboxPanelProps { telegrams: LedgerEntry[]; deliveries: Record<string, string>; }
 function InboxPanel({ telegrams, deliveries }: InboxPanelProps) {
   return <ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.heading}>Local telegram ledger</Text>
     <Text style={styles.help}>This is the device ledger. It remains available while connectivity is absent and after app restarts.</Text>
     {telegrams.length === 0 ? <Text style={styles.empty}>No telegrams stored yet. Create one or start the relay to receive one.</Text> : null}
-    {telegrams.map((telegram) => <View key={telegram.id} style={styles.telegramCard}>
+    {telegrams.map(({ telegram, receivedFrom, deliveredTo }) => <View key={telegram.id} style={styles.telegramCard}>
       <Text style={styles.cardTitle}>{telegram.vital?.name ?? telegram.user_id} · {telegram.status}</Text>
       <Text>{telegram.event} / severity {telegram.severity}</Text><Text>TTL {telegram.ttl} · hops {telegram.hop}</Text>
       <Text>Origin {telegram.origin} · {new Date(telegram.timestamp * 1000).toLocaleString()}</Text>
       <Text>Coordinates {telegram.location.lat.toFixed(4)}, {telegram.location.lng.toFixed(4)}</Text>
-      <Text style={styles.delivery}>{deliveries[telegram.id] ?? (telegram.hop === 0 ? 'Stored: waiting for a peer' : 'Received through nearby relay')}</Text>
+      <Text style={styles.delivery}>{deliveries[telegram.id] ?? (receivedFrom ? `Received from ${receivedFrom}` : deliveredTo.length ? `Delivered to ${deliveredTo.join(', ')}` : 'Outbound: waiting for a peer')}</Text>
       {telegram.vital ? <Text>Blood {telegram.vital.blood ?? 'unknown'} · allergies {telegram.vital.allergies.join(', ') || 'none'}</Text> : null}
     </View>)}
   </ScrollView>;
@@ -149,11 +159,12 @@ function ProfileForm({ draft, onChange, onSave }: ProfileFormProps) {
     <Field label="Emergency contact phone" value={contact.phone} keyboardType="phone-pad" onChangeText={(value) => setContact('phone', value)} />
     <Field label="Emergency contact relationship" value={contact.relationship} onChangeText={(value) => setContact('relationship', value)} />
     <Field label="Verification question ID *" value={draft.questionId} onChangeText={(questionId) => onChange({ ...draft, questionId })} />
+    <Field label="Identity answer *" value={draft.identityAnswer ?? ''} secureTextEntry onChangeText={(identityAnswer) => onChange({ ...draft, identityAnswer })} />
     <Action label="Save private profile" onPress={onSave} />
   </ScrollView>;
 }
 
-interface FieldProps { label: string; value: string; placeholder?: string; keyboardType?: 'default' | 'decimal-pad' | 'number-pad' | 'phone-pad'; onChangeText: (value: string) => void; }
+interface FieldProps { label: string; value: string; placeholder?: string; keyboardType?: 'default' | 'decimal-pad' | 'number-pad' | 'phone-pad'; secureTextEntry?: boolean; onChangeText: (value: string) => void; }
 function Field({ label, ...props }: FieldProps) { return <View><Text style={styles.label}>{label}</Text><TextInput style={styles.input} placeholder={props.placeholder} {...props} /></View>; }
 interface ChoiceProps<T extends string> { label: string; value: T; options: readonly T[]; onChange: (value: T) => void; }
 function Choice<T extends string>({ label, value, options, onChange }: ChoiceProps<T>) { return <View><Text style={styles.label}>{label}</Text><View style={styles.choices}>{options.map((option) => <Pressable key={option} style={[styles.choice, value === option && styles.choiceActive]} onPress={() => onChange(option)}><Text style={value === option ? styles.choiceTextActive : undefined}>{option}</Text></Pressable>)}</View></View>; }
@@ -163,10 +174,12 @@ interface TabButtonProps { label: string; active: boolean; onPress: () => void; 
 function TabButton({ label, active, onPress }: TabButtonProps) { return <Pressable style={[styles.tab, active && styles.tabActive]} onPress={onPress}><Text style={active ? styles.tabTextActive : styles.tabText}>{label}</Text></Pressable>; }
 
 function validateTelegram(draft: TelegramDraft): string | null { if (!draft.eventId.trim()) return 'Event identifier is required.'; if (!Number.isFinite(draft.location.lat) || draft.location.lat < -90 || draft.location.lat > 90) return 'Latitude must be between -90 and 90.'; if (!Number.isFinite(draft.location.lng) || draft.location.lng < -180 || draft.location.lng > 180) return 'Longitude must be between -180 and 180.'; return null; }
-function validateProfile(profile: ProfileInput): string | null { if (!profile.userId.trim() || !profile.fullName.trim() || !profile.docNumber.trim() || !profile.birthDate.trim() || !profile.questionId.trim()) return 'User ID, name, document, birth date and verification question are required.'; if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.birthDate)) return 'Birth date must use YYYY-MM-DD.'; return null; }
+function validateProfile(profile: ProfileInput): string | null { if (!profile.userId.trim() || !profile.fullName.trim() || !profile.docNumber.trim() || !profile.birthDate.trim() || !profile.questionId.trim() || !profile.identityAnswer?.trim()) return 'User ID, name, document, birth date, verification question and identity answer are required.'; if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.birthDate)) return 'Birth date must use YYYY-MM-DD.'; return null; }
 function splitList(value: string): string[] { return value.split(',').map((entry) => entry.trim()).filter(Boolean); }
 function messageFor(error: unknown): string { return error instanceof Error ? error.message : 'Unexpected offline relay error.'; }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#f8fafc' }, header: { padding: 18, backgroundColor: '#102a43', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, brand: { color: 'white', fontSize: 28, fontWeight: '800' }, subtitle: { color: '#cbd5e1' }, fake: { color: '#fbbf24', fontWeight: '700', fontSize: 11 }, tabs: { flexDirection: 'row', backgroundColor: 'white' }, tab: { flex: 1, paddingVertical: 12, alignItems: 'center' }, tabActive: { borderBottomWidth: 3, borderBottomColor: '#0f766e' }, tabText: { color: '#64748b', fontSize: 11, fontWeight: '700' }, tabTextActive: { color: '#0f766e', fontSize: 11, fontWeight: '800' }, content: { padding: 16, gap: 12 }, heading: { fontSize: 21, fontWeight: '800', color: '#102a43' }, help: { color: '#475569', lineHeight: 20 }, statusCard: { backgroundColor: '#e0f2fe', padding: 14, borderRadius: 10, gap: 4 }, status: { fontSize: 18, fontWeight: '700' }, error: { color: '#b91c1c', paddingHorizontal: 16, paddingTop: 8 }, action: { backgroundColor: '#0f766e', padding: 14, borderRadius: 8 }, actionText: { color: 'white', fontWeight: '700', textAlign: 'center' }, secondary: { backgroundColor: 'white', borderColor: '#0f766e', borderWidth: 1 }, secondaryText: { color: '#0f766e' }, disabled: { opacity: 0.45 }, label: { fontWeight: '700', color: '#334155', marginBottom: 5 }, input: { backgroundColor: 'white', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 11 }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, choice: { padding: 8, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 16, backgroundColor: 'white' }, choiceActive: { backgroundColor: '#0f766e', borderColor: '#0f766e' }, choiceTextActive: { color: 'white', fontWeight: '700' }, telegramCard: { backgroundColor: 'white', padding: 13, borderRadius: 10, gap: 3, borderLeftWidth: 4, borderLeftColor: '#0f766e' }, cardTitle: { fontWeight: '800', fontSize: 16 }, delivery: { color: '#0369a1', fontWeight: '700' }, empty: { color: '#64748b', paddingVertical: 20 }, switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.55)', justifyContent: 'center', padding: 24 },
+  modalCard: { backgroundColor: 'white', borderRadius: 14, padding: 20, gap: 14 },
 });

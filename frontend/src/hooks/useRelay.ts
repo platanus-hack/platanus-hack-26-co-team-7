@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import type {
   EngineStatus,
+  LedgerEntry,
   PermissionResult,
   ProfileInput,
+  RelayEvent,
   RelayPermissions,
-  Telegram,
   TelegramDraft,
 } from 'ziro-relay';
 
@@ -35,12 +36,14 @@ function toPermissionResult(perms: RelayPermissions): PermissionResult {
 export function useRelay() {
   const client = useMemo(() => createRelayClient(), []);
   const [status, setStatus] = useState<EngineStatus>('IDLE');
-  const [telegrams, setTelegrams] = useState<Telegram[]>([]);
+  const [telegrams, setTelegrams] = useState<LedgerEntry[]>([]);
   const [peers, setPeers] = useState<string[]>([]);
+  const [discoveredPeers, setDiscoveredPeers] = useState<string[]>([]);
   const [lastReject, setLastReject] = useState<string | null>(null);
   const [radioError, setRadioError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PermissionResult>({ granted: [], denied: [] });
   const [deliveries, setDeliveries] = useState<Record<string, string>>({});
+  const [relayEvents, setRelayEvents] = useState<RelayEvent[]>([]);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
@@ -58,6 +61,7 @@ export function useRelay() {
     void client.getProfile().then(setProfile).catch((reason: unknown) => setError(messageFor(reason)));
 
     const subscription = client.addRelayListener((event) => {
+      setRelayEvents((current) => [event, ...current].slice(0, 20));
       switch (event.type) {
         case 'STATUS_CHANGED':
           setStatus(event.status);
@@ -87,6 +91,7 @@ export function useRelay() {
           setRadioError(event.message);
           break;
         case 'PEER_DISCOVERED':
+          setDiscoveredPeers((current) => [...new Set([...current, event.peerId])]);
           break;
       }
     });
@@ -105,13 +110,25 @@ export function useRelay() {
     status,
     telegrams,
     peerCount: peers.length,
+    peers,
+    discoveredPeers,
     lastReject,
     radioError,
     permissions,
     deliveries,
+    relayEvents,
     profile,
     error,
-    start: client.start,
+    start: useCallback(async () => {
+      try {
+        await client.start();
+        setError(null);
+      } catch (reason: unknown) {
+        const message = messageFor(reason);
+        setError(message);
+        throw new Error(message);
+      }
+    }, [client]),
     stop: client.stop,
     requestPermissions: useCallback(async () => {
       const result = await client.requestPermissions();
@@ -121,7 +138,8 @@ export function useRelay() {
     saveProfile: useCallback(async (nextProfile: ProfileInput) => {
       try {
         await client.saveProfile(nextProfile);
-        setProfile(nextProfile);
+        const { identityAnswer: _identityAnswer, ...persistedProfile } = nextProfile;
+        setProfile(persistedProfile);
         setError(null);
       } catch (reason: unknown) {
         const message = messageFor(reason);

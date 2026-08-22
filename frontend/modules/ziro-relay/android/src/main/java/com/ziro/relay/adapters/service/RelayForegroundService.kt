@@ -28,14 +28,37 @@ import com.ziro.relay.RelayContainer
  * notification never shows.
  */
 class RelayForegroundService : Service() {
+    private var relayStarted = false
 
     override fun onCreate() {
         super.onCreate()
+        createChannel()
+        startInForeground()
         RelayContainer.attach(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        createChannel()
+        startInForeground()
+        RelayContainer.attach(applicationContext)
+        if (!relayStarted) {
+            RelayContainer.engine.start()
+            relayStarted = true
+        }
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        if (relayStarted) {
+            RelayContainer.engine.stop()
+            relayStarted = false
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun startInForeground() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setContentTitle("ZIRO relay active")
@@ -47,16 +70,7 @@ class RelayForegroundService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        RelayContainer.engine.start()
-        return START_STICKY
     }
-
-    override fun onDestroy() {
-        RelayContainer.engine.stop()
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

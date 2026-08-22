@@ -4,6 +4,7 @@ import com.ziro.relay.domain.PeerId
 import com.ziro.relay.domain.RelayPolicy
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.ports.TelegramLedger
+import com.ziro.relay.ports.LedgerLocalState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +53,9 @@ class InMemoryLedger : TelegramLedger {
     override suspend fun get(id: String): Telegram? = mutex.withLock { rows[id]?.telegram }
 
     override suspend fun all(): List<Telegram> = mutex.withLock { snapshot() }
+    override suspend fun localState(id: String): LedgerLocalState? = mutex.withLock {
+        rows[id]?.let { row -> LedgerLocalState(row.receivedFrom, deliveredTo[id].orEmpty().map(::PeerId).toSet()) }
+    }
 
     override fun stream(): Flow<List<Telegram>> = _stream.asStateFlow()
 

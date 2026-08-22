@@ -3,10 +3,10 @@ package com.ziro.relay
 import android.content.Context
 import com.ziro.relay.adapters.bus.SharedFlowEventBus
 import com.ziro.relay.adapters.crypto.HmacSha256Signer
-import com.ziro.relay.adapters.ledger.SharedPreferencesLedger
+import com.ziro.relay.adapters.ledger.SqliteTelegramLedger
 import com.ziro.relay.adapters.nearby.NearbyTransport
-import com.ziro.relay.adapters.profile.HardcodedProfileStore
-import com.ziro.relay.adapters.profile.SharedPreferencesProfileStore
+import com.ziro.relay.adapters.profile.SqliteProfileStore
+import com.ziro.relay.adapters.sqlite.RelayDatabase
 import com.ziro.relay.application.ForwardPending
 import com.ziro.relay.application.IngestTelegram
 import com.ziro.relay.application.RelayEngine
@@ -55,12 +55,10 @@ object RelayContainer {
         originHash = identity.getString("origin_hash", null)
             ?: UUID.randomUUID().toString().take(8).also { identity.edit().putString("origin_hash", it).apply() }
         bus = SharedFlowEventBus()
-        ledger = SharedPreferencesLedger(appContext)
+        val database = RelayDatabase(appContext)
+        ledger = SqliteTelegramLedger(database)
         signer = HmacSha256Signer()
-        profiles = SharedPreferencesProfileStore(appContext)
-        scope.launch {
-            if (profiles.get() == null) profiles.save(HardcodedProfileStore.DEMO_PROFILE)
-        }
+        profiles = SqliteProfileStore(database)
         ingest = IngestTelegram(ledger = ledger, signer = signer, bus = bus, allowUnsigned = false)
         transport = NearbyTransport(appContext, bus, scope, originHash, ingest)
         forwardPending = ForwardPending(ledger, transport)

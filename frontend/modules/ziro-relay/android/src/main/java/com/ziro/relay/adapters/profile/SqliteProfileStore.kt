@@ -1,6 +1,7 @@
 package com.ziro.relay.adapters.profile
 
-import android.content.Context
+import android.content.ContentValues
+import com.ziro.relay.adapters.sqlite.RelayDatabase
 import com.ziro.relay.domain.BloodRh
 import com.ziro.relay.domain.BloodType
 import com.ziro.relay.domain.Disability
@@ -11,16 +12,23 @@ import com.ziro.relay.ports.ProfileStore
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/** Stores the local profile on device; it never participates in the relay wire format. */
-class SharedPreferencesProfileStore(context: Context) : ProfileStore {
-    private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+/** SQLite-backed private profile store. The database is deliberately unencrypted in this MVP. */
+class SqliteProfileStore(private val database: RelayDatabase) : ProfileStore {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    override suspend fun get(): Profile? = preferences.getString(KEY_PROFILE, null)
-        ?.let { runCatching { json.decodeFromString(PersistedProfile.serializer(), it).toDomain() }.getOrNull() }
+    override suspend fun get(): Profile? = database.readableDatabase.query(
+        "profile", arrayOf("profile_json"), "id = 1", null, null, null, null,
+    ).use { cursor ->
+        if (!cursor.moveToFirst()) null
+        else runCatching { json.decodeFromString(PersistedProfile.serializer(), cursor.getString(0)).toDomain() }.getOrNull()
+    }
 
     override suspend fun save(profile: Profile) {
-        preferences.edit().putString(KEY_PROFILE, json.encodeToString(PersistedProfile.serializer(), PersistedProfile.from(profile))).apply()
+        val values = ContentValues().apply {
+            put("id", 1)
+            put("profile_json", json.encodeToString(PersistedProfile.serializer(), PersistedProfile.from(profile)))
+        }
+        database.writableDatabase.insertWithOnConflict("profile", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     @Serializable private data class PersistedContact(val name: String, val phone: String, val relationship: String)
@@ -42,10 +50,5 @@ class SharedPreferencesProfileStore(context: Context) : ProfileStore {
                 profile.eps, profile.emergencyContacts.map { PersistedContact(it.name, it.phone, it.relationship) },
                 profile.questionId, profile.answerHash, profile.deviceSecret)
         }
-    }
-
-    private companion object {
-        const val PREFERENCES = "ziro_relay_profile"
-        const val KEY_PROFILE = "profile"
     }
 }

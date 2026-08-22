@@ -1,4 +1,4 @@
-import type { EngineStatus, ProfileInput, RelayEvent, Telegram, TelegramDraft } from 'ziro-relay';
+import type { EngineStatus, LedgerEntry, ProfileInput, RelayEvent, Telegram, TelegramDraft } from 'ziro-relay';
 
 import type { RelayClient } from './relayClient';
 
@@ -55,7 +55,7 @@ function sampleTelegram(overrides: Partial<Telegram> = {}): Telegram {
       disability: 'NONE',
       pregnant: false,
     },
-    verify: { question_id: 'PET_NAME_42', answer_hash: 'abc123' },
+    verify: { question_id: 'PET_NAME_42', answer_hash: 'a'.repeat(64) },
     hmac: null,
     ...overrides,
   };
@@ -64,7 +64,7 @@ function sampleTelegram(overrides: Partial<Telegram> = {}): Telegram {
 export function createFakeRelayClient(): RelayClient {
   let status: EngineStatus = 'IDLE';
   let profile = DEFAULT_PROFILE;
-  const ledger = new Map<string, Telegram>();
+  const ledger = new Map<string, LedgerEntry>();
   const listeners = new Set<(event: RelayEvent) => void>();
   const timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -87,7 +87,7 @@ export function createFakeRelayClient(): RelayClient {
       return;
     }
     const stored: Telegram = { ...telegram, hop: telegram.hop + 1, ttl: telegram.ttl - 1 };
-    ledger.set(stored.id, stored);
+    ledger.set(stored.id, { telegram: stored, receivedFrom: peerId, deliveredTo: [peerId] });
     emit({ type: 'TELEGRAM_RECEIVED', peerId, telegram: JSON.stringify(stored) });
   };
 
@@ -124,7 +124,8 @@ export function createFakeRelayClient(): RelayClient {
     },
 
     async saveProfile(nextProfile) {
-      profile = nextProfile;
+      const { identityAnswer: _identityAnswer, ...storedProfile } = nextProfile;
+      profile = storedProfile;
     },
 
     async sendTelegram(draft: TelegramDraft) {
@@ -141,13 +142,13 @@ export function createFakeRelayClient(): RelayClient {
         },
       });
       // The origin stores its own telegram at hop 0 — store-and-forward starts here.
-      ledger.set(telegram.id, telegram);
+      ledger.set(telegram.id, { telegram, receivedFrom: null, deliveredTo: [] });
       emit({ type: 'TELEGRAM_SENT', peerId: 'fake-peer-01', telegramId: telegram.id });
       return telegram;
     },
 
     async getLedger() {
-      return [...ledger.values()].sort((a, b) => b.timestamp - a.timestamp);
+      return [...ledger.values()].sort((a, b) => b.telegram.timestamp - a.telegram.timestamp);
     },
 
     addRelayListener(listener) {

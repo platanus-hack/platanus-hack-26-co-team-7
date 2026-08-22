@@ -3,6 +3,7 @@ package com.ziro.relay.application
 import com.ziro.relay.domain.EventType
 import com.ziro.relay.domain.GeoPoint
 import com.ziro.relay.domain.PersonStatus
+import com.ziro.relay.domain.RelayEnvelopeCodec
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
 import com.ziro.relay.domain.toVerifyBlock
@@ -57,10 +58,15 @@ class SendTelegram(
 
         val telegram = unsigned.copy(hmac = signer.sign(unsigned))
 
+        val wire = TelegramCodec.encode(telegram)
+        require(RelayEnvelopeCodec.telegram(telegram.id, wire.toString(Charsets.UTF_8)).size <= RelayEnvelopeCodec.MAX_BYTES) {
+            "Telegram exceeds the 24 KiB Nearby payload limit. Remove medical list entries and try again."
+        }
+
         // hop stays 0 here: the origin has not travelled anywhere. The first receiver is
         // the one that moves it to 1. See RelayPolicy.
         ledger.put(telegram, receivedFrom = null)
-        transport.broadcast(TelegramCodec.encode(telegram))
+        transport.broadcast(wire)
 
         return telegram
     }

@@ -4,6 +4,8 @@ import com.ziro.relay.domain.PeerId
 import com.ziro.relay.domain.Telegram
 import kotlinx.coroutines.flow.Flow
 
+data class LedgerLocalState(val receivedFrom: PeerId?, val deliveredTo: Set<PeerId>)
+
 /**
  * PORT — the memory of this node.
  *
@@ -12,8 +14,8 @@ import kotlinx.coroutines.flow.Flow
  * "did I already hand it to that peer" exist only here and must never enter a telegram
  * — if they travelled, every node would be asserting facts about other nodes' state.
  *
- * MVP implementation is InMemoryLedger. Phase 5 swaps in RoomLedger by changing one
- * line in ZiroApp. Nothing above this interface changes.
+ * The production adapter is durable SQLite storage. Nothing above this interface depends on
+ * the storage mechanism.
  */
 interface TelegramLedger {
 
@@ -28,6 +30,9 @@ interface TelegramLedger {
     suspend fun get(id: String): Telegram?
 
     suspend fun all(): List<Telegram>
+
+    /** Local-only metadata for UI status; it must never be added to a telegram. */
+    suspend fun localState(id: String): LedgerLocalState?
 
     /** Observable view for the UI. Emits a new list on every accepted telegram. */
     fun stream(): Flow<List<Telegram>>

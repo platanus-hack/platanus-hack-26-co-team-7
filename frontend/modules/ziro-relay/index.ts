@@ -3,8 +3,10 @@ import type { EventSubscription } from 'expo-modules-core';
 
 import {
   parsePermissionResult,
+  parseLedgerEntries,
   parseTelegram,
   type EngineStatus,
+  type LedgerEntry,
   type PermissionResult,
   type RelayEvent,
   type RelayPermissions,
@@ -88,11 +90,9 @@ export async function sendTelegram(draft: TelegramDraft): Promise<Telegram> {
  * asleep, so events emitted during that time are gone — but the ledger is not. This is the
  * reconciliation path, and it is why the ledger lives in Kotlin.
  */
-export async function getLedger(): Promise<Telegram[]> {
+export async function getLedger(): Promise<LedgerEntry[]> {
   const wire = await native.getLedger();
-  const raw: unknown = JSON.parse(wire);
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) => parseTelegram(JSON.stringify(item)));
+  return parseLedgerEntries(wire);
 }
 
 /**
