@@ -6,6 +6,7 @@ import com.ziro.relay.domain.PersonStatus
 import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.CoroutineScope
@@ -75,7 +76,7 @@ class ZiroRelayModule : Module() {
         }
 
         /** Returns the created telegram as a wire JSON string. */
-        AsyncFunction("sendTelegram") { eventId: String, lat: Double, lng: Double, severity: Int ->
+        AsyncFunction("sendTelegram") Coroutine { eventId: String, lat: Double, lng: Double, severity: Int ->
             val telegram = RelayContainer.sendTelegram(
                 eventId = eventId,
                 location = GeoPoint(lat = lat, lng = lng),
@@ -83,12 +84,14 @@ class ZiroRelayModule : Module() {
                 status = PersonStatus.EMERGENCY,
                 severity = severity,
             )
-            wire(telegram)
+            return@Coroutine wire(telegram)
         }
 
         /** The whole local ledger as a JSON array of telegrams. Newest first. */
-        AsyncFunction("getLedger") {
-            json.encodeToString(
+        // Dot call with an explicit type argument: the no-arg lambda is otherwise ambiguous
+        // between the zero- and one-parameter Coroutine overloads.
+        AsyncFunction("getLedger").Coroutine<String> {
+            return@Coroutine json.encodeToString(
                 ListSerializer(Telegram.serializer()),
                 RelayContainer.ledger.all(),
             )

@@ -1,3 +1,16 @@
+// The serialization plugin is not on the root buildscript classpath, and the generated
+// android/ project is gitignored, so it has to be declared here instead — this file is the
+// module's own source and survives `expo prebuild --clean`.
+// kotlinVersion is set by the expo-root-project plugin, so it stays aligned with kotlin-android.
+buildscript {
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    classpath "org.jetbrains.kotlin:kotlin-serialization:${rootProject.ext.kotlinVersion}"
+  }
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'org.jetbrains.kotlin.plugin.serialization'
