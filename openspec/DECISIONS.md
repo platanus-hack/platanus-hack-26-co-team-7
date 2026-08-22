@@ -166,6 +166,19 @@ Lo menor (parámetros exactos de backoff WS, estrategia idempotente del seed, es
 
 ---
 
+## Trigger Engine — proveedores sísmicos (cerrado 2026-08-22)
+
+El detonador que abre `events` y dispara la alerta usa **dos proveedores que coexisten**, ambos en `modules/` del proceso FastAPI, desactivados por defecto (`EMSC_ENABLED=false`, `SGC_ENABLED=false`):
+
+| Proveedor | Fuente | Mecanismo | Filtro por defecto |
+|---|---|---|---|
+| **EMSC** (mundial) | `wss://www.seismicportal.eu/standing_order/websocket` | WebSocket near-real-time (`modules/trigger_emsc`) | mag ≥ 5.0, bbox lat 0–14 / lon −80…−66 |
+| **SGC** (Colombia, prioridad para Bogotá) | `https://archive.sgc.gov.co/feed/v1.0.1/summary/five_days_all.json` | Polling HTTP c/60s (`modules/trigger_sgc`) | mag ≥ 4.5, mismo bbox |
+
+- Ambos deduplican por su `id`/`unid` propio → `events.event_id`, abren `EARTHQUAKE` abierto y emiten `EVENT_OPENED` por WS.
+- Para la demo con datos de prueba es suficiente; si el producto escala, **falta autorización escrita del SGC** para ingestión automática/caché/republicación (deuda ética documentada; contactar `datos@sgc.gov.co`). Verificar antes de activar en producción.
+- **Gotcha real verificado**: el feed SGC devuelve `geometry.coordinates` en orden **`[lat, lon, depth]`** (no `[lon, lat]`). El módulo lo auto-detecta por signos del bbox (los rangos lat/lon no se solapan) para no silenciar eventos reales.
+
 ## Restricciones y números que hay que recordar
 
 - **Rango por hop:** 50-200 m (verificado, NO 1 km).
