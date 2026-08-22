@@ -31,21 +31,23 @@ DEMO_EVENT_ID = "DEMO-EARTHQUAKE001"
 BOGOTA_LAT = 4.5981
 BOGOTA_LNG = -74.0758
 
-# Per cell: (dlat, dlng, i_w1, c_w1, i_w2, c_w2). Grid spacing ~0.01 deg
-# (~1.1 km) keeps every point in a distinct res-8 cell; intensities vary.
+# Per cell: (dlat, dlng, intensity_w1, persons_w1, intensity_w2, persons_w2).
+# telegram_count stores DISTINCT PERSONS in danger (EMERGENCY/NEED_HELP) per
+# cell — the aggregator will COUNT(DISTINCT user_id) in production; here we
+# simulate with realistic 0–9 persons per ~500 m cell. Grid ~0.01 deg (~1.1 km).
 CELL_SPECS = [
-    (0.00, 0.00, 9.0, 42, 7.5, 30),
-    (0.01, 0.00, 6.5, 21, 5.0, 12),
-    (0.02, 0.00, 3.0, 8, 1.5, 3),
-    (-0.01, 0.00, 8.0, 35, 9.5, 48),
-    (-0.02, 0.00, 2.5, 6, 0.0, 0),
-    (0.00, 0.01, 5.5, 17, 6.0, 20),
-    (0.00, -0.01, 7.0, 26, 4.5, 10),
-    (0.00, 0.02, 1.0, 2, 0.0, 0),
-    (0.00, -0.02, 4.0, 11, 2.5, 5),
-    (0.01, 0.01, 6.0, 19, 8.0, 33),
-    (-0.01, -0.01, 3.5, 9, 2.0, 4),
-    (0.01, -0.01, 5.0, 14, 3.5, 7),
+    (0.00, 0.00, 9.0, 8, 7.5, 6),
+    (0.01, 0.00, 6.5, 5, 5.0, 4),
+    (0.02, 0.00, 3.0, 3, 1.5, 1),
+    (-0.01, 0.00, 8.0, 7, 9.5, 9),
+    (-0.02, 0.00, 2.5, 2, 0.0, 0),
+    (0.00, 0.01, 5.5, 4, 6.0, 5),
+    (0.00, -0.01, 7.0, 6, 4.5, 3),
+    (0.00, 0.02, 1.0, 1, 0.0, 0),
+    (0.00, -0.02, 4.0, 3, 2.5, 2),
+    (0.01, 0.01, 6.0, 5, 8.0, 7),
+    (-0.01, -0.01, 3.5, 3, 2.0, 2),
+    (0.01, -0.01, 5.0, 4, 3.5, 3),
 ]
 
 # (source, minutes_after_occurred_at, title, summary, recommendations, figures)

@@ -7,21 +7,22 @@ import type { HeatmapCell, Report } from "./types";
  */
 
 export const FALLBACK_CELLS: HeatmapCell[] = [
-  { h3_index: "8866e09053fffff", intensity: 9.4, telegram_count: 118, centroid: { lat: 4.6, lng: -74.1 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e092e3fffff", intensity: 8.8, telegram_count: 105, centroid: { lat: 4.615, lng: -74.075 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e0922bfffff", intensity: 8.2, telegram_count: 96, centroid: { lat: 4.645, lng: -74.11 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e09257fffff", intensity: 7.6, telegram_count: 90, centroid: { lat: 4.655, lng: -74.085 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e4289dfffff", intensity: 7.1, telegram_count: 83, centroid: { lat: 4.7, lng: -74.06 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e09023fffff", intensity: 6.9, telegram_count: 64, centroid: { lat: 4.59, lng: -74.14 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e42d29fffff", intensity: 6.4, telegram_count: 71, centroid: { lat: 4.66, lng: -74.055 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e42dedfffff", intensity: 5.5, telegram_count: 44, centroid: { lat: 4.63, lng: -74.03 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e09265fffff", intensity: 5.2, telegram_count: 38, centroid: { lat: 4.67, lng: -74.13 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e09155fffff", intensity: 4.8, telegram_count: 52, centroid: { lat: 4.61, lng: -74.17 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e4293bfffff", intensity: 4.1, telegram_count: 29, centroid: { lat: 4.735, lng: -74.165 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e46697fffff", intensity: 3.6, telegram_count: 25, centroid: { lat: 4.68, lng: -74.18 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e429ddfffff", intensity: 2.9, telegram_count: 17, centroid: { lat: 4.72, lng: -74.12 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e42c25fffff", intensity: 1.8, telegram_count: 9, centroid: { lat: 4.65, lng: -74.01 }, window_start: "2026-08-22T12:00:00Z" },
-  { h3_index: "8866e42ab1fffff", intensity: 0.7, telegram_count: 3, centroid: { lat: 4.74, lng: -74.05 }, window_start: "2026-08-22T12:00:00Z" },
+  // telegram_count = distinct personas en peligro por celda (no telegrams)
+  { h3_index: "8866e09053fffff", intensity: 9.4, telegram_count: 8, centroid: { lat: 4.6, lng: -74.1 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e092e3fffff", intensity: 8.8, telegram_count: 7, centroid: { lat: 4.615, lng: -74.075 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e0922bfffff", intensity: 8.2, telegram_count: 6, centroid: { lat: 4.645, lng: -74.11 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e09257fffff", intensity: 7.6, telegram_count: 6, centroid: { lat: 4.655, lng: -74.085 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e4289dfffff", intensity: 7.1, telegram_count: 5, centroid: { lat: 4.7, lng: -74.06 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e09023fffff", intensity: 6.9, telegram_count: 4, centroid: { lat: 4.59, lng: -74.14 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e42d29fffff", intensity: 6.4, telegram_count: 5, centroid: { lat: 4.66, lng: -74.055 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e42dedfffff", intensity: 5.5, telegram_count: 3, centroid: { lat: 4.63, lng: -74.03 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e09265fffff", intensity: 5.2, telegram_count: 3, centroid: { lat: 4.67, lng: -74.13 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e09155fffff", intensity: 4.8, telegram_count: 4, centroid: { lat: 4.61, lng: -74.17 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e4293bfffff", intensity: 4.1, telegram_count: 2, centroid: { lat: 4.735, lng: -74.165 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e46697fffff", intensity: 3.6, telegram_count: 2, centroid: { lat: 4.68, lng: -74.18 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e429ddfffff", intensity: 2.9, telegram_count: 2, centroid: { lat: 4.72, lng: -74.12 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e42c25fffff", intensity: 1.8, telegram_count: 1, centroid: { lat: 4.65, lng: -74.01 }, window_start: "2026-08-22T12:00:00Z" },
+  { h3_index: "8866e42ab1fffff", intensity: 0.7, telegram_count: 1, centroid: { lat: 4.74, lng: -74.05 }, window_start: "2026-08-22T12:00:00Z" },
 ];
 
 const fallbackContent = (
