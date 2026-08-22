@@ -208,7 +208,7 @@ Versiones reales en `gradle/libs.versions.toml`. Lo relevante:
 play-services-nearby        19.3.0
 kotlinx-serialization-json  1.7.3
 kotlinx-coroutines-android  1.9.0
-compose-bom                 2024.10.01
+expo SDK                    52 (RN 0.76.5)
 minSdk                      26   (java.time sin desugaring)
 ```
 
@@ -246,4 +246,4 @@ Lo que sí hay que hacer es **desconectarse de la red Wi-Fi del venue** (radio p
 
 ## No corre en emulador
 
-No hay Bluetooth ni Wi-Fi Direct virtualizado. **Dos teléfonos físicos o nada.** Por eso existe `FakeTransport`: implementa el mismo puerto `PeerTransport` en proceso, así que todo el pipeline (encode → transmitir → decode → verificar → dedup → guardar → render) se puede ejercitar en un solo teléfono, en un emulador, o dentro de un `@Preview` de Compose.
+No hay Bluetooth ni Wi-Fi Direct virtualizado. **Dos teléfonos físicos o nada.** Por eso existe `FakeTransport`: implementa el mismo puerto `PeerTransport` en proceso, así que todo el pipeline (encode → transmitir → decode → verificar → dedup → guardar) se puede ejercitar en un solo teléfono o en un emulador. Del lado de la UI, `fakeRelayClient` cumple el mismo rol y corre en **Expo Go**. Ver `bridge.md`.

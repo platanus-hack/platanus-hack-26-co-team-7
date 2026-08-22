@@ -2,7 +2,7 @@
 
 ## 1. El "telegrama": unidad mínima de información
 
-El telegrama es un objeto JSON muy pequeño (~120-200 bytes) que viaja entre nodos. Es la **única unidad de información obligatoria** que cruza la red mesh.
+El telegrama es un objeto JSON chico (~550-700 bytes) que viaja entre nodos. Es la **única unidad de información obligatoria** que cruza la red mesh.
 
 ### Schema del telegrama (v1)
 
@@ -38,7 +38,9 @@ El telegrama es un objeto JSON muy pequeño (~120-200 bytes) que viaja entre nod
 }
 ```
 
-Implementación de referencia: `app/src/main/java/com/ziro/relay/domain/Telegram.kt`. Ese archivo es la fuente de verdad; este documento explica el por qué.
+Implementación de referencia: `modules/ziro-relay/android/src/main/java/com/ziro/relay/domain/Telegram.kt`. Ese archivo es la fuente de verdad; este documento explica el por qué.
+
+**Espejo TypeScript:** `modules/ziro-relay/src/ZiroRelay.types.ts`. Los dos se cambian en el **mismo commit** — ningún compilador cruza el bridge. Ver `bridge.md`.
 
 ### Campos raíz — obligatorios
 
@@ -109,7 +111,7 @@ Lo que cambia es la aritmética del ledger: el cap de 5 MB pasa de ~25.000 teleg
 
 Para minimizar bytes en el aire, en producción se puede usar **CBOR** o **MessagePack** en lugar de JSON. Para la demo del hackathon, **JSON string** alcanza porque:
 
-- 200 bytes × N telegrams = trivial comparado con el tiempo de handshake P2P.
+- ~650 bytes x N telegramas = trivial comparado con los 5-15 s de handshake P2P.
 - Debug más fácil (se puede loguear y leer).
 
 Si en 36h sobra tiempo, se puede meter CBOR. Pero NO es core.
