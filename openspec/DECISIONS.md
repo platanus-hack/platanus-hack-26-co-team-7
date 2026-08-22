@@ -1,4 +1,4 @@
-# DECISIONS — Memoria del proyecto ZIRO
+# DECISIONS — Memoria del proyecto Replica
 
 > Este archivo es el sustituto de Engram para esta sesión. Centraliza las decisiones de diseño, las ideas discutidas, los tradeoffs considerados y lo que se rechazó. **Léanlo antes de empezar a codear** — está pensado para que el equipo entero entienda el "por qué" de cada decisión sin tener que repetir la conversación.
 
@@ -6,7 +6,7 @@
 
 ## Tesis central del proyecto (en una frase)
 
-**ZIRO** es una red de comunicación de emergencia que convierte los teléfonos Android en una **red temporal que se auto-enriquece** — cuando la infraestructura celular colapsa, transporta telegramas de emergencia chicos (~550-700 bytes) entre dispositivos vía Wi-Fi Direct / BLE, sin Internet, y simultáneamente **va acumulando un registro distribuido de emergencias en cada nodo** que crece orgánicamente con cada interacción.
+**Replica** es una red de comunicación de emergencia que convierte los teléfonos Android en una **red temporal que se auto-enriquece**: cuando la infraestructura celular colapsa, transporta telegramas de emergencia entre dispositivos mediante Nearby Connections —BLE para descubrimiento y Bluetooth/Wi-Fi Direct para datos— sin Internet, y acumula un registro distribuido en cada nodo. Es store-and-forward con gossip, no mesh routing IP.
 
 ---
 
@@ -30,10 +30,10 @@ Tres categorías necesitan comunicar:
 ## Las 5 ideas centrales que el equipo tiene que tener CLARAS
 
 ### 1. **Store-and-Forward + Gossip — NO mesh routing IP**
-No es B.A.T.M.A.N., no es cjdns, no es Yggdrasil. Es ferry de mensajes: A le pasa a B, B guarda y reenvía, y además **sincroniza su ledger completo con cada par**. Esto es lo que hace ZIRO diferente de cualquier mesh messenger genérico.
+No es B.A.T.M.A.N., no es cjdns, no es Yggdrasil. Es ferry de mensajes: A le pasa a B, B guarda y reenvía, y además **sincroniza su ledger completo con cada par**. Esto es lo que hace Replica diferente de cualquier mesh messenger genérico.
 
 ### 2. **Cada nodo acumula un ledger distribuido**
-Cuando A se encuentra con B, NO solo le pasa sus telegramas nuevos; **sincronizan sus bases completas** (metadata primero, después bytes). Esto convierte al nodo en un repositorio activo. **Caso de uso nuevo**: un rescatista con ZIRO offline puede ver la lista de personas reportadas en la zona sin Internet.
+Cuando A se encuentra con B, NO solo le pasa sus telegramas nuevos; **sincronizan sus bases completas** (metadata primero, después bytes). Esto convierte al nodo en un repositorio activo. **Caso de uso nuevo**: un rescatista con Replica offline puede ver la lista de personas reportadas en la zona sin Internet.
 
 ### 3. **El telegrama es chico a propósito — ~550-700 bytes**
 La gracia NO es transferir archivos pesados por los nodos (eso es inviable en 36h). La gracia es que el telegrama es data estructurada diminuta comparada con el handshake de Nearby (5-15 s), así que se transmite en milisegundos. El video/audio se sube después por otro canal (lazy upload desde el origen).
@@ -41,10 +41,10 @@ La gracia NO es transferir archivos pesados por los nodos (eso es inviable en 36
 **Corrección:** versiones anteriores decían "~120 bytes, cabe en una sola trama BLE". Eso era doctrina, no física — un advertisement BLE son 31 bytes, así que ni 200 bytes entraban. Nearby usa BLE solo para *discovery*; los payloads van por BT Classic / Wi-Fi Direct, con límite en KB. Con el bloque `vital` completo el telegrama pesa ~550-700 bytes y no hay problema técnico alguno. **El límite real es la privacidad, no el ancho de banda.**
 
 ### 4. **El origen se auto-protege**
-Si la persona tiene que irse y deja el teléfono, el origen **ya repartió los primeros 15-30 segundos del video entre los primeros 2-3 ZIRO que encontró** (Opción 2). Si queda solo, sigue transmitiendo un beacon BLE cada 60s (Opción 1). **La información nunca queda en un solo lugar.**
+Si la persona tiene que irse y deja el teléfono, el origen **ya repartió los primeros 15-30 segundos del video entre los primeros 2-3 Replica que encontró** (Opción 2). Si queda solo, sigue transmitiendo un beacon BLE cada 60s (Opción 1). **La información nunca queda en un solo lugar.**
 
 ### 5. **Trigger externo, no detección propia**
-ZIRO no detecta sismos. Usa EMSC / un endpoint propio / un botón manual como trigger. Evita reinventar la rueda y enfoca el esfuerzo en lo diferencial.
+Replica no detecta sismos. Usa EMSC / un endpoint propio / un botón manual como trigger. Evita reinventar la rueda y enfoca el esfuerzo en lo diferencial.
 
 ---
 
@@ -58,6 +58,39 @@ ZIRO no detecta sismos. Usa EMSC / un endpoint propio / un botón manual como tr
 - **Phone + Internet → Backend Render** (canal saliente clásico HTTP/WS, solo cuando un nodo tiene conectividad).
 
 Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver diagrama completo en `communication.md`.
+
+### Protocolo v2 — diseño pendiente de migración (2026-08-22)
+
+Estas decisiones describen una migración futura. La implementación móvil actual mantiene `Telegram.PROTOCOL_VERSION = 1`; no se debe presentar v2 ni el backend asociado como funcionalidad entregada. Ver el contrato ejecutable en `frontend/modules/ziro-relay/android/src/main/java/com/ziro/relay/domain/Telegram.kt`.
+
+**1. Perfil completo en onboarding (tabla `profile` del teléfono):** `user_id`, `full_name`, `doc_type` (CC|TI|CE|PA|NIT), `doc_number`, `birth_date` (la edad se DERIVA, no se guarda), `blood_type` + `blood_rh` separados (O- es donante universal, O+ no), `allergies[]`, `chronic_conditions[]`, `medications[]`, `disability` (NONE|MOBILITY|VISUAL|HEARING|COGNITIVE), `is_pregnant`, `weight_kg`, `eps`, `emergency_contacts[{name, phone, relationship}]`, `question_id`, `answer_hash`, `device_secret`.
+
+**2. Criterio de qué VIAJA:** no es "qué es importante" sino *¿qué necesita un rescatista SIN Internet en los próximos 10 minutos?*
+- **VIAJA en claro** (triage offline): name, age, blood+rh, allergies, conditions, medications, disability, pregnant → bloque `vital`.
+- **NO viaja**: doc_type, doc_number, eps, teléfonos de contactos, device_secret → el backend ya los tiene del onboarding y resuelve por `user_id`. Nombre + cédula + sangre + GPS en el SQLite sin cifrar de 8 desconocidos = kit de robo de identidad en tránsito.
+- **`family_contact` sale del telegrama.** El backend notifica a la familia usando los contactos del perfil. No hay razón para que el teléfono de tu papá pase por 8 celulares ajenos.
+
+**3. `device_secret`:** se registra server-side durante el onboarding (canal TLS) para que el backend/gateway pueda verificar el HMAC. Nunca viaja por la mesh ni es expuesto por ningún endpoint.
+
+**4. Corrección honesta de tamaño:** "~120 bytes cabe en una trama BLE" era doctrina, no física. Un advertisement BLE legacy son 31 bytes; Nearby Connections usa BLE solo para discovery y manda datos por Bluetooth Classic/Wi-Fi (`Payload.fromBytes`, límite del orden de KB). Telegrama v2 ≈ **550–700 bytes**, sin problema técnico. Ledger cap 5 MB pasa de ~25.000 a ~7.000 telegramas. **El límite real es privacidad, no ancho de banda.**
+
+**5. Trade-off aceptado:** si alguien nunca completó onboarding con Internet antes del desastre, el backend no tiene su perfil y la notificación familiar falla. Limitación documentada del MVP.
+
+### Dashboard web público adelantado al MVP + módulo web backend (2026-08-22)
+
+La decisión del mismo día que dejaba el dashboard web "post-hackathon" (ver TBD cerrado más abajo) queda **SUPERADA**: se adelanta el dashboard público al MVP porque la sección "para qué sirve" del pitch ante jueces no tiene cara visual sin él. Cambio SDD `dashboard-web` (ver `openspec/changes/dashboard-web/design.md`).
+
+**Decisiones arquitectónicamente significativas de este módulo:**
+
+| Decisión | Lo elegido | Por qué | Lo rechazado |
+|---|---|---|---|
+| **Dashboard en el MVP** | Adelantado a la demo (antes: post-hackathon) | Sin dashboard, heatmap y reportes IA son invisibles para jueces/prensa/rescatistas | Mantenerlo post-hackathon (el pitch pierde su demostración visual) |
+| **Resolución H3 compartida** | **res 8 (~500 m)** como constante con nombre (`backend/app/constants.py` y `frontWeb/src/lib/constants.ts`); fuente única de documentación = esta tabla | Seed y futuro agregador deben coincidir en granularidad; celda ~500 m respeta privacidad (nunca posición individual) | res 9 (~170 m, riesgo de reidentificación), hardcodear el número suelto (inconsistencia garantizada) |
+| **Contrato `reports.content`** | Schema JSON v1 documentado en design.md `{version, title, summary, recommendations[], figures}`; backend pasa tal cual, UI renderiza defensivamente con tipo TS espejo | Sin pipeline LLM real, doble validación runtime es costo puro; un contrato escrito basta para hackathon | pydantic + zod espejados (validación doble sin productor real) |
+| **Broadcast realtime** | WS `/ws` solo-notificación tipada; `ConnectionManager` en proceso; notificación interna por llamada directa (sin HTTP entre módulos) | Cumple la regla no-inter-module-HTTP; WS caído ≠ UI rota (reconciliación REST) | Pub/sub externo tipo Redis (fuera de presupuesto), WS transportando estado |
+| **Limitación monoproceso del seed** | El seed CLI corre en otro proceso y NO notifica por WS; flujo de demo = seed → arrancar servidor → clientes cargan por GET al conectar | Documentar honestamente el alcance; reconciliación inicial vía GET lo cubre | Polling periódico cliente (fuera de spec), seed embebido como único modo |
+
+Lo menor (parámetros exactos de backoff WS, estrategia idempotente del seed, estructura de routers) vive solo en `design.md`.
 
 ### Tabla de decisiones
 
@@ -100,7 +133,7 @@ Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver dia
 
 ---
 
-## Lo que **NO** es ZIRO
+## Lo que **NO** es Replica
 
 - ❌ No es detector de sismos (usa EMSC o trigger externo).
 - ❌ No es messenger general (Briar, Bridgefy, Signal ya existen).
@@ -121,7 +154,7 @@ Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver dia
 | **ShakeAlert / Google EEW** | Alertas tempranas server-push | No transporta evidencia, push unidireccional |
 | **Ushahidi** | Plataforma de mapeo de crisis | Requiere SMS o web, no funciona offline P2P |
 
-**ZIRO específicamente** combina: registro distribuido + gossip + auto-supervivencia del origen + caso de uso de rescatistas offline en un solo producto.
+**Replica específicamente** combina: registro distribuido + gossip + auto-supervivencia del origen + caso de uso de rescatistas offline en un solo producto.
 
 ---
 
@@ -133,7 +166,7 @@ Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver dia
 - **iOS support:** fuera de scope para 36h
 - **CBOR/MessagePack para telegrama:** no core, JSON alcanza
 - ✅ **Modelo de identidad (cerrado 2026-08-22):** el perfil del usuario (nombre, documento, tipo de sangre, contactos de emergencia, `question_id`/`answer_hash`) se carga en el **flujo de onboarding al instalar la app**, antes de cualquier evento. El perfil vive localmente cifrado (SQLite + SQLCipher).
-- ✅ **Acceso de familiares (cerrado 2026-08-22):** los familiares **deben instalar ZIRO** para participar en flujos offline (caso C5 de `orphan-device.md` — un familiar marca SAFE desde otro dispositivo). SMS / web ligera / app companion queda fuera del MVP.
+- ✅ **Acceso de familiares (cerrado 2026-08-22):** los familiares **deben instalar Replica** para participar en flujos offline (caso C5 de `orphan-device.md` — un familiar marca SAFE desde otro dispositivo). SMS / web ligera / app companion queda fuera del MVP.
 - ✅ **Rescatistas (cerrado 2026-08-22):** la visión final es un **dashboard web centralizado** (online-only, requiere backend). Para el MVP del hackathon, los rescatistas también usan la **app móvil** con una vista read-only del ledger local. El dashboard web es post-hackathon.
 
 ---
@@ -141,7 +174,7 @@ Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver dia
 ## Conceptos técnicos que el equipo tiene que entender
 
 - **TTL vs Hop**: TTL = cuántos saltos le QUEDAN al mensaje antes de morir. Hop = cuántos saltos YA hizo. Ortogonales.
-- **ServiceId** `"ziro.relay.v1"` — el identificador del servicio Nearby Connections. Filtra qué peers son ZIRO.
+- **ServiceId** `"replica.relay.v1"` — el identificador del servicio Nearby Connections. Filtra qué peers son Replica.
 - **Dedup por ID** = el corazón del protocolo. Si ya tenés el UUID, no proceses de nuevo.
 - **Estrategia P2P_STAR** = un nodo central con varios periféricos. Modela nuestro caso "un origen + varios relays".
 - **HMAC** = firma criptográfica con clave compartida. Imposible de falsificar sin la clave.

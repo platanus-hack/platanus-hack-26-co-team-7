@@ -2,7 +2,7 @@
 
 ## Concepto
 
-Cada nodo ZIRO mantiene una **base de datos local SQLite** con **TODOS los telegramas que vio**, no solo los que retransmite. Esta base se sincroniza con cada par usando un protocolo de **gossip** simple (diff de IDs primero, bytes después).
+Cada nodo Replica mantiene una **base de datos local SQLite** con **TODOS los telegramas que vio**, no solo los que retransmite. Esta base se sincroniza con cada par usando un protocolo de **gossip** simple (diff de IDs primero, bytes después).
 
 ### JSON vs SQLite — dos roles distintos
 
@@ -15,9 +15,9 @@ Cada nodo ZIRO mantiene una **base de datos local SQLite** con **TODOS los teleg
 
 ## Por qué esto importa (no es decoración)
 
-Sin ledger distribuido, ZIRO sería "solo otro mesh messenger". Con ledger distribuido, ZIRO se vuelve:
+Sin ledger distribuido, Replica sería "solo otro mesh messenger". Con ledger distribuido, Replica se vuelve:
 
-1. **Un repositorio distribuido de emergencias activas** — un rescatista con ZIRO offline puede ver qué personas se reportaron en su zona.
+1. **Un repositorio distribuido de emergencias activas** — un rescatista con Replica offline puede ver qué personas se reportaron en su zona.
 2. **Un sistema tolerante a fallos** — si un nodo se pierde, otros siguen teniendo la info.
 3. **Un sistema útil incluso sin Internet** — el ledger local es consultable desde la app.
 4. **Un sistema con store-and-forward real** — un nodo sin Internet puede acumular mensajes y flush-earlos apenas recupera señal.
@@ -349,7 +349,7 @@ Si el ledger tiene > 100 IDs de diferencia, el que recibe puede pedir resumen pa
 
 ## Caso de uso del rescatista (el momento WOW)
 
-El rescatista con ZIRO abre la app → la app muestra automáticamente una lista de personas reportadas en la zona (últimas 24h, severidad ≥ 2). Esta lista se llena **por gossip con cualquier par que se acerque**.
+El rescatista con Replica abre la app → la app muestra automáticamente una lista de personas reportadas en la zona (últimas 24h, severidad ≥ 2). Esta lista se llena **por gossip con cualquier par que se acerque**.
 
 ```kotlin
 suspend fun showNearbyEmergencies(): List<Emergency> {
@@ -358,7 +358,7 @@ suspend fun showNearbyEmergencies(): List<Emergency> {
 }
 ```
 
-**Pitch:** "Un rescatista llega a una zona sin Internet. Apenas entra al rango de cualquier ZIRO cercano, recibe la lista de personas reportadas. No necesita Internet. La información ya está distribuida en los teléfonos de la gente alrededor."
+**Pitch:** "Un rescatista llega a una zona sin Internet. Apenas entra al rango de cualquier Replica cercano, recibe la lista de personas reportadas. No necesita Internet. La información ya está distribuida en los teléfonos de la gente alrededor."
 
 ## Lo que NO hace este ledger (declaration of honesty)
 

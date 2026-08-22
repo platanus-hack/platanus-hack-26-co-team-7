@@ -1,4 +1,4 @@
-# ZIRO — Project Brief
+# Replica — Project Brief
 
 ## El problema
 
@@ -16,11 +16,11 @@ Hay tres categorías de gente que necesitan comunicarse:
 2. **La familia**, que quiere saber si su ser querido está bien y dónde.
 3. **Los rescatistas**, que necesitan coordinar en zonas donde la red está caída o no llega.
 
-## La propuesta de valor de ZIRO
+## La propuesta de valor de Replica
 
-**ZIRO convierte los teléfonos en una red temporal de comunicación que sobrevive la caída de la infraestructura.**
+**Replica convierte los teléfonos en una red temporal de comunicación que sobrevive la caída de la infraestructura.**
 
-No intenta detectar el terremoto (eso lo hace EMSC, USGS, el sistema Android Earthquake Alerts de Google, etc.). ZIRO **usa un trigger externo** y a partir de ahí hace tres cosas:
+No intenta detectar el terremoto (eso lo hace EMSC, USGS, el sistema Android Earthquake Alerts de Google, etc.). Replica **usa un trigger externo** y a partir de ahí hace tres cosas:
 
 1. **Recopila** evidencia local (video, audio, GPS, timestamp, identificador anónimo) en el teléfono del afectado.
 2. **Transporta** un telegrama chico (~550-700 bytes) que resume la emergencia a través de dispositivos cercanos vía Wi-Fi Direct / BLE, sin Internet, sin torres celulares.
@@ -32,11 +32,11 @@ Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la ca
 
 > "Son las 2:37 de la mañana. Ocurre un terremoto en Bogotá. Miles de personas intentan llamar a sus familiares. Las redes se saturan. Una persona tiene su teléfono, tiene GPS, tiene video de lo que ocurre, pero no puede enviar nada.
 >
-> **ZIRO** convierte ese teléfono — y todos los que están cerca — en una red temporal que se comunica por Wi-Fi Direct sin Internet. Cada teléfono guarda la información que pasa por él. Cuando uno con Internet aparece, todo llega al servidor. La familia ve dónde está su ser querido. Un rescatista puede ver, sin Internet, qué personas se reportaron en la zona.
+> **Replica** convierte ese teléfono — y todos los que están cerca — en una red temporal que se comunica por Wi-Fi Direct sin Internet. Cada teléfono guarda la información que pasa por él. Cuando uno con Internet aparece, todo llega al servidor. La familia ve dónde está su ser querido. Un rescatista puede ver, sin Internet, qué personas se reportaron en la zona.
 >
 > La información no desaparece cuando la red cae. **Se transporta de bolsillo en bolsillo.**"
 
-## Lo que ZIRO **NO** es
+## Lo que Replica **NO** es
 
 - ❌ No es un detector de sismos (usamos EMSC como trigger).
 - ❌ No es una app de mensajería general (Briar, Bridgefy, Signal ya existen para eso).
@@ -55,7 +55,7 @@ Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la ca
 | **ShakeAlert / Google EEW** | Alertas tempranas server-push | No transporta evidencia. Push unidireccional |
 | **Ushahidi** | Plataforma de mapeo de crisis | Requiere SMS o web. No funciona offline P2P |
 
-**ZIRO específicamente:** combina registro distribuido + gossip + auto-supervivencia del origen + caso de uso de rescatistas offline en un solo producto.
+**Replica específicamente:** combina registro distribuido + gossip + auto-supervivencia del origen + caso de uso de rescatistas offline en un solo producto.
 
 ## Métricas de éxito para la demo
 

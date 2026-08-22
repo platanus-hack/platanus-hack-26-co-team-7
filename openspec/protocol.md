@@ -1,14 +1,18 @@
 # protocol.md — El telegrama y la máquina de estados del nodo
 
+> **Estado de implementación:** la app móvil ejecuta el contrato **v1** (`Telegram.PROTOCOL_VERSION = 1`). La forma de datos descrita aquí es diseño de migración y no autoriza a afirmar que existan autenticación, sincronización gateway, APIs ni backend operativos. La migración debe cambiar coordinadamente Kotlin y TypeScript. Se preservan los invariantes: Nearby solo corre en teléfonos; la propagación es store-and-forward con gossip, no enrutamiento IP; coordenadas crudas e identificadores de personas no salen a superficies públicas ni al LLM.
+
 ## 1. El "telegrama": unidad mínima de información
 
 El telegrama es un objeto JSON chico (~550-700 bytes) que viaja entre nodos. Es la **única unidad de información obligatoria** que cruza la red mesh.
 
-### Schema del telegrama (v1)
+### Schema del telegrama propuesto (v2)
+
+> **v2 (2026-08-22, propuesta):** se reestructura con bloques anidados `vital` y `verify`, y **`family_contact` sale del telegrama**. El contrato objetivo asigna sus contactos al backend por `user_id`; ese onboarding y esa resolución no son funcionalidad demostrada. Ver `DECISIONS.md`.
 
 ```json
 {
-  "v": 1,
+  "v": 2,
   "id": "a8f29c3f-7b9e-4a1d-8e2f-1c5b9d6e3f4a",
   "user_id": "USER123",
   "event_id": "EARTHQUAKE001",
@@ -38,7 +42,7 @@ El telegrama es un objeto JSON chico (~550-700 bytes) que viaja entre nodos. Es 
 }
 ```
 
-Implementación de referencia: `modules/ziro-relay/android/src/main/java/com/ziro/relay/domain/Telegram.kt`. Ese archivo es la fuente de verdad; este documento explica el por qué.
+Implementación de referencia: `frontend/modules/ziro-relay/android/src/main/java/com/ziro/relay/domain/Telegram.kt`. Ese archivo es la fuente de verdad; este documento explica el por qué.
 
 **Espejo TypeScript:** `modules/ziro-relay/src/ZiroRelay.types.ts`. Los dos se cambian en el **mismo commit** — ningún compilador cruza el bridge. Ver `bridge.md`.
 
@@ -88,9 +92,9 @@ El criterio de admisión de este bloque es una sola pregunta: **¿lo necesita un
 
 | Dato | Por qué se queda en el teléfono |
 |---|---|
-| `doc_type`, `doc_number` | El backend ya los tiene del onboarding, indexados por `user_id`. Un rescatista no necesita la cédula para salvarte, pero `nombre + cédula + sangre + GPS` en el teléfono de un desconocido, en SQLite **sin cifrar** (que es el MVP), es un kit de robo de identidad viajando por 8 saltos. |
+| `doc_type`, `doc_number` | El diseño futuro los asocia server-side al `user_id`; no deben viajar. Un rescatista no necesita la cédula para salvarte, pero `nombre + cédula + sangre + GPS` en el teléfono de un desconocido, en SQLite **sin cifrar** (que es el MVP), es un kit de robo de identidad viajando por 8 saltos. |
 | `eps` | Idem. Es para admisión hospitalaria, no para triage en la calle. |
-| `family_contact` | **Cambio respecto de la versión anterior de este doc.** El backend notifica a la familia y ya tiene el teléfono del onboarding. No hay razón para que el número de un familiar pase por el celular de 8 extraños. |
+| `family_contact` | **Cambio respecto de la versión anterior de este doc.** El diseño futuro reserva esa notificación al backend; no hay razón para que el número de un familiar pase por el celular de 8 extraños. |
 | `device_secret` | Es la clave del HMAC. |
 | video, audio, fotos | Se quedan en disco, suben por HTTP cuando hay Internet. Ver `storage.md`. |
 | Cualquier metadata local | `receivedFrom`, `sent`, `arrivedAt`. Ver `ledger.md`. |
@@ -107,23 +111,49 @@ Lo que cambia es la aritmética del ledger: el cap de 5 MB pasa de ~25.000 teleg
 
 **El límite real no es el ancho de banda. Es la privacidad**, y por eso manda la tabla de "lo que NO viaja".
 
-### Versión serializada (compacta)
+### Bloque `vital` — qué VIAJA y por qué
 
-Para minimizar bytes en el aire, en producción se puede usar **CBOR** o **MessagePack** en lugar de JSON. Para la demo del hackathon, **JSON string** alcanza porque:
+El criterio NO es "qué es importante", sino: **¿qué necesita un rescatista SIN Internet en los próximos 10 minutos?**
 
 - ~650 bytes x N telegramas = trivial comparado con los 5-15 s de handshake P2P.
 - Debug más fácil (se puede loguear y leer).
 
-Si en 36h sobra tiempo, se puede meter CBOR. Pero NO es core.
+| Campo | Para qué |
+|---|---|
+| `name` | Identificación humana en el punto de rescate |
+| `age` | Triage y dosificación |
+| `blood` | Transfusión (ABO+Rh) |
+| `allergies` | Penicilina, látex — mata si no se sabe |
+| `conditions` | Diabetes, epilepsia, cardíaco, asma |
+| `medications` | Anticoagulantes cambian todo en trauma |
+| `disability` | Define CÓMO se rescata: ¿camina o hay que cargarlo? |
+| `pregnant` | Cambia la prioridad de triage drásticamente |
+
+**NO viaja** (el backend lo tiene del onboarding, resuelto por `user_id`): `doc_type`, `doc_number`, `eps`, teléfonos de contactos de emergencia, `device_secret`. Un rescatista no necesita la cédula para salvarte — pero nombre + cédula + sangre + ubicación GPS en el SQLite sin cifrar de un desconocido, saltando por 8 teléfonos ajenos, es un kit de robo de identidad en tránsito.
+
+`family_contact` fue eliminado del telegrama en v2: la notificación a la familia es responsabilidad del backend usando los contactos del perfil registrado en onboarding.
+
+**Trade-off aceptado:** si alguien nunca completó el onboarding con Internet, el backend no tiene su perfil y la notificación a la familia falla. Documentado como limitación del MVP.
+
+### Tamaño real (corrección honesta)
+
+El "~120 bytes, cabe en una sola trama BLE" de versiones anteriores era doctrina, no física:
+
+- Un advertisement BLE legacy son **31 bytes** — ni siquiera un telegrama de 200 bytes cabía ahí.
+- Nearby Connections **no manda payloads por advertisements**: usa BLE para *discovery* y después Bluetooth Classic o Wi-Fi para el canal de datos (`Payload.fromBytes`), donde el límite está en el orden de los KB.
+
+Con el bloque `vital`, el telegrama pesa **~550–700 bytes** y no hay ningún problema técnico. La aritmética del ledger sí cambia: el cap de 5 MB pasa de ~25.000 a ~7.000 telegramas. Sigue siendo de sobra. **El límite real no es el ancho de banda; es la privacidad** — y por eso manda el criterio del bloque `vital`, no el conteo de bytes.
+
+Para minimizar bytes en el aire se podría usar **CBOR** o MessagePack en lugar de JSON, pero NO es core: JSON string alcanza y facilita el debug (se puede loguear y leer).
 
 ### Por qué cada campo
 
-- **`v=1`** — permite que un nodo v2 rechace/acepte nodos v1 sin ambigüedad.
+- **`v=2`** — permite que un nodo v2 rechace/acepte nodos v1 sin ambigüedad.
 - **`id` UUID** — es la única verdad universal. Un nodo recibe un telegrama y pregunta "¿ya tengo este id?" → decide si lo guarda o lo descarta. Sin esto, el ledger se inunda de duplicados.
 - **`user_id`** — separa la identidad de la persona del id del mensaje. Varios telegramas del mismo afectado (ej: `EMERGENCY` inicial + `NEED_HELP` después) comparten `user_id` pero tienen `id` distinto. El backend los agrupa por acá.
 - **`event_id`** — varios afectados en el mismo terremoto comparten `event_id`. Permite al backend mostrar "este desastre tiene N personas reportadas".
 - **`status`** — el estado de la **persona**, no del nodo. Es ortogonal a los 5 estados del nodo (`IDLE/ADVERTISING/SYNC/RELAY/ORPHAN`). Ver sección 4 abajo.
-- **`question_id` + `answer_hash`** — mecanismo de verificación de identidad para transicionar a `SAFE`. La pregunta (ej: "¿nombre de tu primera mascota?") está asociada al perfil pre-cargado del usuario. El `answer_hash` es el SHA-256 de la respuesta correcta. **La respuesta en claro nunca sale del teléfono.** Cuando alguien quiere confirmar que está a salvo, tipea la respuesta en la app; el backend compara el hash y, si coincide, marca `SAFE`. Si el usuario no tiene su teléfono a mano, **otro dispositivo ZIRO autorizado** (ej: el de un familiar) puede tipear la respuesta en su nombre y mandar un nuevo telegrama con `status: "SAFE"` desde su propio `origin` (mismo `user_id`). Ver `orphan-device.md`.
+- **`question_id` + `answer_hash`** (bloque `verify`) — mecanismo de verificación de identidad para transicionar a `SAFE`. La pregunta (ej: "¿nombre de tu primera mascota?") está asociada al perfil pre-cargado del usuario. El `answer_hash` es el SHA-256 de la respuesta correcta. **La respuesta en claro nunca sale del teléfono.** Cuando alguien quiere confirmar que está a salvo, tipea la respuesta en la app; el backend compara el hash y, si coincide, marca `SAFE`. Si el usuario no tiene su teléfono a mano, **otro dispositivo Replica autorizado** (ej: el de un familiar) puede tipear la respuesta en su nombre y mandar un nuevo telegrama con `status: "SAFE"` desde su propio `origin` (mismo `user_id`). Ver `orphan-device.md`.
 - **`hop` vs `ttl`** — son ortogonales. `hop` te dice **cuántos saltos hizo** (información útil para el backend: "este mensaje pasó por 4 dispositivos antes de llegar al gateway"). `ttl` te dice **cuántos saltos le quedan** antes de morir.
 - **`origin`** — para que el gateway pueda reconstruir el path A → B → C → D → Gateway en el dashboard.
 
@@ -188,7 +218,7 @@ Guardado en `Canonical.of` con doble decimal fijo en las coordenadas (6 decimale
 
 ## 3. Máquina de estados del nodo
 
-Cada nodo ZIRO tiene 5 estados. Las transiciones son **manejadas por eventos** (no por polling).
+Cada nodo Replica tiene 5 estados. Las transiciones son **manejadas por eventos** (no por polling).
 
 ```
             ┌──────────────┐
@@ -221,9 +251,9 @@ Cada nodo ZIRO tiene 5 estados. Las transiciones son **manejadas por eventos** (
 #### IDLE → ADVERTISING
 **Trigger:** trigger externo (EMSC, botón manual, schedule pre-configurado, etc.).
 **Acción:**
-- `Nearby.Connections.startAdvertising(serviceId="ziro.relay.v1", strategy=P2P_STAR)`
-- `Nearby.Connections.startDiscovery(serviceId="ziro.relay.v1")`
-- Advertise en BLE con metadata mínima `{app:"ziro", v:1, has_emergency: true}`.
+- `Nearby.Connections.startAdvertising(serviceId="replica.relay.v1", strategy=P2P_STAR)`
+- `Nearby.Connections.startDiscovery(serviceId="replica.relay.v1")`
+- Advertise en BLE con metadata mínima `{app:"replica", v:1, has_emergency: true}`.
 
 #### ADVERTISING → SYNC
 **Trigger:** se descubre un par (callback de Nearby Connections).
@@ -246,7 +276,7 @@ Cada nodo ZIRO tiene 5 estados. Las transiciones son **manejadas por eventos** (
 **Trigger:** pasaron 2 minutos sin descubrir ningún par.
 **Acción:**
 - Bajar frecuencia de advertising (ahorrar batería).
-- Mantener BLE advertising con metadata extendida `{app:"ziro", v:1, has_emergency: true, ledger_size: N, last_seen_peer: ts}`.
+- Mantener BLE advertising con metadata extendida `{app:"replica", v:1, has_emergency: true, ledger_size: N, last_seen_peer: ts}`.
 - Cada 60s, broadcast de beacon.
 - Si entra un par, transición a SYNC.
 
@@ -281,7 +311,7 @@ NEED_HELP  ──safe answer──▶  SAFE
 ### Quién puede emitir cada transición
 
 - **Origen** (el propio teléfono del afectado): puede pasar de `EMERGENCY` a `NEED_HELP` o a `SAFE` (con respuesta correcta).
-- **Dispositivo ZIRO autorizado** (familiar con ZIRO instalado y vinculado al `user_id`): puede pasar a `SAFE` en nombre del afectado. Esto cubre el caso "el teléfono quedó tirado". Ver `orphan-device.md`.
+- **Dispositivo Replica autorizado** (familiar con Replica instalado y vinculado al `user_id`): puede pasar a `SAFE` en nombre del afectado. Esto cubre el caso "el teléfono quedó tirado". Ver `orphan-device.md`.
 - **Backend**: nunca emite transiciones por sí solo — solo refleja lo que recibe y notifica a la familia.
 
 ### Modelo en el backend

@@ -2,7 +2,7 @@
 
 ## Dónde vive Nearby Connections (aclaración arquitectónica)
 
-Este es el punto más importante para entender ZIRO. **Nearby Connections vive en el teléfono, NO en el backend.**
+Este es el punto más importante para entender Replica. **Nearby Connections vive en el teléfono, NO en el backend.**
 
 ```
 ANDROID APP (cada teléfono) — un solo APK vía EAS Build
@@ -33,7 +33,7 @@ Esto mata el modelo mental incorrecto "Backend → Nearby → teléfonos". La re
 
 ## Decisión de fondo
 
-ZIRO usa **Google Nearby Connections** como capa de transporte radio. **NO implementa Wi-Fi Direct ni BLE directamente**.
+Replica usa **Google Nearby Connections** como capa de transporte radio. **NO implementa Wi-Fi Direct ni BLE directamente**.
 
 ## Por qué Nearby Connections
 
@@ -53,17 +53,17 @@ ZIRO usa **Google Nearby Connections** como capa de transporte radio. **NO imple
 ## ServiceId
 
 ```kotlin
-private const val SERVICE_ID = "ziro.relay.v1"
+private const val SERVICE_ID = "replica.relay.v1"
 ```
 
-Este ID es público en el APK. Permite que solo dispositivos ZIRO con la misma versión del protocolo se reconozcan entre sí. Versión `v1` permite migrar a `v2` sin romper compatibilidad hacia atrás.
+Este ID es público en el APK. Permite que solo dispositivos Replica con la misma versión del protocolo se reconozcan entre sí. Versión `v1` permite migrar a `v2` sin romper compatibilidad hacia atrás.
 
 ## Estrategia de discovery
 
 ```kotlin
 Nearby.getConnectionsClient(context).startAdvertising(
     SERVICE_ID,
-    "ZIRO Relay",  // human-readable name visible en el peer
+    "Replica Relay",  // human-readable name visible en el peer
     connectionLifecycleCallback,
     AdvertisingOptions.Builder()
         .setStrategy(Strategy.P2P_STAR)  // un nodo central + varios periféricos
@@ -89,7 +89,7 @@ Cuando A descubre a B (o viceversa), se dispara `onEndpointFound(endpointId, inf
 
 ```kotlin
 Nearby.getConnectionsClient(context).requestConnection(
-    localEndpointName,    // ej: "ziro-A-${hash}"
+    localEndpointName,    // ej: "replica-A-${hash}"
     endpointId,
     connectionLifecycleCallback
 )
@@ -145,7 +145,7 @@ El receptor, en `onPayloadReceived(endpointId, payload)`:
 - **Rango por hop: 50-200 m** en condiciones normales (urban denso puede ser 30 m). **No es 1 km.**
 - **Tiempo de handshake: 5-15 segundos** en condiciones normales. El payload (~650 bytes) es instantáneo comparado — el handshake domina por tres órdenes de magnitud.
 - **Máximo 3 conexiones simultáneas por nodo** (recomendado para batería/CPU).
-- **Teléfonos SIN ZIRO no participan** — limitación de Android. Por eso el modelo Relay/Gateway.
+- **Teléfonos SIN Replica no participan** — limitación de Android. Por eso el modelo Relay/Gateway.
 - **Background discovery se pausa** — la app tiene que estar abierta o con foreground service.
 
 ## Permisos Android requeridos
