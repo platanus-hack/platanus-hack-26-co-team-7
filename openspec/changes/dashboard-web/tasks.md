@@ -27,26 +27,26 @@ Chain strategy: pending
 
 ## Fase 1: Backend — API pública readonly (spec public-api-readonly)
 
-- [ ] 1.1 Modificar `backend/pyproject.toml`: añadir `fastapi`, `uvicorn[standard]`, `h3` e instalar (proposal Dependencias).
-- [ ] 1.2 Crear `backend/app/constants.py`: `H3_CELL_RESOLUTION = 8` citando DECISIONS.md (D1).
-- [ ] 1.3 Modificar `backend/app/config.py`: campo `cors_origins` desde env `BACKEND_CORS_ORIGINS` coma-separada; sin wildcard con credenciales (D5; spec CORS).
-- [ ] 1.4 Crear `backend/app/schemas/dashboard.py`: CellOut, HeatmapResponse, ReportOut, ReportsResponse, ErrorResponse (contratos GET del spec).
-- [ ] 1.5 Crear `backend/app/routers/heatmap.py` (+ `routers/__init__.py`): GET `/api/v1/heatmap` — último evento abierto (`closed_at IS NULL ORDER BY occurred_at DESC LIMIT 1`); query acumulada GROUP BY `h3_index` (SUM/MAX/MAX, D6); centroide server-side con `h3.cell_to_latlng`; sin evento ⇒ 200 `{cells: []}`; event_id inexistente ⇒ 404 tipado (escenarios: «Heatmap con datos acumulados», «Evento abierto inexistente», «event_id inexistente»).
-- [ ] 1.6 Crear `backend/app/routers/reports.py`: GET `/api/v1/reports?event_id=&limit=50` — `generated_at` DESC; `content` JSONB tal cual, sin interpretar (escenarios del requirement reports).
-- [ ] 1.7 Crear `backend/app/ws.py`: ConnectionManager singleton in-process; broadcast tipado CELLS_UPDATED/REPORT_CREATED; origen validado contra cors_origins (D7).
-- [ ] 1.8 Crear `backend/app/routers/ws.py`: WS `/ws` anónimo; desconexión limpia try/finally (D7; escenarios de broadcast).
-- [ ] 1.9 Crear `backend/app/main.py`: `create_app()` con lifespan (`Base.metadata.create_all`), CORSMiddleware con orígenes explícitos, include routers (D5; escenario «Petición desde el origen de la web»).
-- [ ] 1.10 Smoke fase 1 (curl): DB vacía ⇒ ambas GET 200 con colecciones vacías («Arranque en frío»); `POST /api/v1/telegrams` ⇒ 404/405 («Intento de escritura rechazado»); ninguna respuesta expone coordenadas crudas ni `sid` («Auditoría de privacidad», «Centroide deriva solo de la celda»).
+- [x] 1.1 Modificar `backend/pyproject.toml`: añadir `fastapi`, `uvicorn[standard]`, `h3` e instalar (proposal Dependencias).
+- [x] 1.2 Crear `backend/app/constants.py`: `H3_CELL_RESOLUTION = 8` citando DECISIONS.md (D1).
+- [x] 1.3 Modificar `backend/app/config.py`: campo `cors_origins` desde env `BACKEND_CORS_ORIGINS` coma-separada; sin wildcard con credenciales (D5; spec CORS).
+- [x] 1.4 Crear `backend/app/schemas/dashboard.py`: CellOut, HeatmapResponse, ReportOut, ReportsResponse, ErrorResponse (contratos GET del spec).
+- [x] 1.5 Crear `backend/app/routers/heatmap.py` (+ `routers/__init__.py`): GET `/api/v1/heatmap` — último evento abierto (`closed_at IS NULL ORDER BY occurred_at DESC LIMIT 1`); query acumulada GROUP BY `h3_index` (SUM/MAX/MAX, D6); centroide server-side con `h3.cell_to_latlng`; sin evento ⇒ 200 `{cells: []}`; event_id inexistente ⇒ 404 tipado (escenarios: «Heatmap con datos acumulados», «Evento abierto inexistente», «event_id inexistente»).
+- [x] 1.6 Crear `backend/app/routers/reports.py`: GET `/api/v1/reports?event_id=&limit=50` — `generated_at` DESC; `content` JSONB tal cual, sin interpretar (escenarios del requirement reports).
+- [x] 1.7 Crear `backend/app/ws.py`: ConnectionManager singleton in-process; broadcast tipado CELLS_UPDATED/REPORT_CREATED; origen validado contra cors_origins (D7).
+- [x] 1.8 Crear `backend/app/routers/ws.py`: WS `/ws` anónimo; desconexión limpia try/finally (D7; escenarios de broadcast).
+- [x] 1.9 Crear `backend/app/main.py`: `create_app()` con lifespan (`Base.metadata.create_all`), CORSMiddleware con orígenes explícitos, include routers (D5; escenario «Petición desde el origen de la web»).
+- [x] 1.10 Smoke fase 1 (curl): DB vacía ⇒ ambas GET 200 con colecciones vacías («Arranque en frío»); `POST /api/v1/telegrams` ⇒ 404/405 («Intento de escritura rechazado»); ninguna respuesta expone coordenadas crudas ni `sid` («Auditoría de privacidad», «Centroide deriva solo de la celda»).
 
 Dependencia: Fase 2 requiere 1.1 instalado; Fases 3–4 requieren endpoints de Fase 1 para verificarse contra contratos reales.
 
 ## Fase 2: Seed de demo (spec demo-seed-data)
 
-- [ ] 2.1 Crear `backend/scripts/seed_demo.py` con argparse cuyo `--help` documente EXPLÍCITAMENTE el comportamiento idempotente elegido (reconstrucción por evento demo) — correctivo del validador; el requirement «Idempotencia o reinicio explícito» exige el comportamiento documentado en la ayuda (D3).
-- [ ] 2.2 Implementar upsert por `event_id="DEMO-EARTHQUAKE001"`: si existe, borrar received_cells (FK CASCADE) y reports (DELETE explícito, FK RESTRICT) y reinsertar en una transacción (D3; escenario «Re-ejecución sin duplicados»).
-- [ ] 2.3 Insertar Event abierto + ReceivedCells alrededor de Bogotá derivadas con h3-py res 8 (importar `constants.H3_CELL_RESOLUTION`), intensidades variadas, ventanas contenidas en el evento (escenarios «Seed desde base de datos vacía», «Datos plausibles»).
-- [ ] 2.4 Insertar Reports plausibles: content JSON v1 `{version,title,summary,recommendations,figures}` (D2), fuente SCHEDULED/MANUAL, `generated_at` crecientes.
-- [ ] 2.5 Verificar compatibilidad con la API: GET heatmap devuelve exactamente las celdas sembradas con intensidades; GET reports DESC (escenarios «Seed alimenta al heatmap público», «Seed alimenta al feed»).
+- [x] 2.1 Crear `backend/scripts/seed_demo.py` con argparse cuyo `--help` documente EXPLÍCITAMENTE el comportamiento idempotente elegido (reconstrucción por evento demo) — correctivo del validador; el requirement «Idempotencia o reinicio explícito» exige el comportamiento documentado en la ayuda (D3).
+- [x] 2.2 Implementar upsert por `event_id="DEMO-EARTHQUAKE001"`: si existe, borrar received_cells (FK CASCADE) y reports (DELETE explícito, FK RESTRICT) y reinsertar en una transacción (D3; escenario «Re-ejecución sin duplicados»).
+- [x] 2.3 Insertar Event abierto + ReceivedCells alrededor de Bogotá derivadas con h3-py res 8 (importar `constants.H3_CELL_RESOLUTION`), intensidades variadas, ventanas contenidas en el evento (escenarios «Seed desde base de datos vacía», «Datos plausibles»).
+- [x] 2.4 Insertar Reports plausibles: content JSON v1 `{version,title,summary,recommendations,figures}` (D2), fuente SCHEDULED/MANUAL, `generated_at` crecientes.
+- [x] 2.5 Verificar compatibilidad con la API: GET heatmap devuelve exactamente las celdas sembradas con intensidades; GET reports DESC (escenarios «Seed alimenta al heatmap público», «Seed alimenta al feed»).
 
 Dependencia crítica: el mapa (Fase 3) solo es verificable visualmente con datos del seed.
 
