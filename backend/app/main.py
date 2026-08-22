@@ -9,16 +9,20 @@ WS broadcast) per openspec/changes/dashboard-web (spec public-api-readonly).
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
-from app.database import Base, engine
-from app.routers import heatmap, reports
-from app.routers import ws as ws_router
+from app.core.config import settings
+from app.core.database import Base, SessionLocal, engine
+from app.modules.ai_reports import router as ai_reports
+from app.modules.dashboard import router as dashboard
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -27,7 +31,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     import app.models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+
+    # Optional EMSC earthquake trigger listener. Disabled by default
+    # (settings.emsc_enabled is False), so startup stays network-free.
+    emsc_task: asyncio.Task | None = None
+    if settings.emsc_enabled:
+        from app.modules.trigger_emsc import listener as emsc_listener
+
+        emsc_task = asyncio.create_task(
+            emsc_listener.run_emsc_listener(SessionLocal)
+        )
+        logger.info("EMSC earthquake trigger listener started (%s)", settings.emsc_url)
+
     yield
+
+    if emsc_task is not None:
+        emsc_task.cancel()
+        try:
+            await emsc_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("EMSC earthquake trigger listener stopped")
 
 
 def create_app() -> FastAPI:
@@ -48,9 +72,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(heatmap.router)
-    app.include_router(reports.router)
-    app.include_router(ws_router.router)
+    app.include_router(dashboard.router)
+    app.include_router(ai_reports.router)
 
     return app
 
