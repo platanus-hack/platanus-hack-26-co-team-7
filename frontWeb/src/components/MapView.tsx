@@ -70,7 +70,7 @@ export default function MapView({ cells }: MapViewProps) {
       getTooltip={(info: PickingInfo<HeatmapCell>) =>
         info.object
           ? {
-              html: `<b>Intensidad:</b> ${info.object.intensity.toFixed(1)}<br/><b>Telegrams:</b> ${info.object.telegram_count}`,
+              html: `<b>Personas en peligro:</b> ${info.object.telegram_count}`,
               style: {
                 backgroundColor: "#141a24",
                 color: "#e6edf3",
