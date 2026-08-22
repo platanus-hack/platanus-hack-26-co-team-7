@@ -10,7 +10,8 @@
     "build:dev": "eas build --profile development --platform android",
     "build:preview": "eas build --profile preview --platform android",
     "typecheck": "tsc --noEmit",
-    "test:engine": "cd android && ./gradlew :modules-ziro-relay:testDebugUnitTest"
+    "test:engine": "cd android && ./gradlew :modules-ziro-relay:testDebugUnitTest",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "expo": "^54.0.0",

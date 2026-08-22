@@ -91,9 +91,79 @@ export type RelayEvent =
   | { type: 'PEER_DISCONNECTED'; peerId: string }
   | { type: 'TELEGRAM_RECEIVED'; peerId: string; telegram: string }
   | { type: 'TELEGRAM_SENT'; peerId: string; telegramId: string }
+  | { type: 'TELEGRAM_DELIVERED'; peerId: string; telegramId: string }
   | { type: 'TELEGRAM_REJECTED'; peerId: string; reason: RejectReason }
   | { type: 'STATUS_CHANGED'; status: EngineStatus }
   | { type: 'RADIO_ERROR'; message: string };
+
+export type RelayPermissions = Record<string, boolean>;
+
+export const EVENT_TYPES = {
+  EARTHQUAKE: 'EARTHQUAKE',
+  FIRE: 'FIRE',
+  FLOOD: 'FLOOD',
+  MEDICAL: 'MEDICAL',
+  OTHER: 'OTHER',
+} as const;
+
+export const PERSON_STATUSES = {
+  EMERGENCY: 'EMERGENCY',
+  NEED_HELP: 'NEED_HELP',
+  SAFE: 'SAFE',
+} as const;
+
+export const DISABILITIES = {
+  NONE: 'NONE',
+  MOBILITY: 'MOBILITY',
+  VISUAL: 'VISUAL',
+  HEARING: 'HEARING',
+  COGNITIVE: 'COGNITIVE',
+} as const;
+
+export const DOCUMENT_TYPES = {
+  CC: 'CC',
+  TI: 'TI',
+  CE: 'CE',
+  PA: 'PA',
+  NIT: 'NIT',
+} as const;
+
+export const BLOOD_TYPES = { A: 'A', B: 'B', AB: 'AB', O: 'O' } as const;
+export const BLOOD_RH = { POSITIVE: 'POSITIVE', NEGATIVE: 'NEGATIVE' } as const;
+
+export interface EmergencyContactInput {
+  name: string;
+  phone: string;
+  relationship: string;
+}
+
+/** Private on-device profile. It is never placed on the relay wire format. */
+export interface ProfileInput {
+  userId: string;
+  fullName: string;
+  docType: keyof typeof DOCUMENT_TYPES;
+  docNumber: string;
+  birthDate: string;
+  bloodType: keyof typeof BLOOD_TYPES;
+  bloodRh: keyof typeof BLOOD_RH;
+  allergies: string[];
+  chronicConditions: string[];
+  medications: string[];
+  disability: keyof typeof DISABILITIES;
+  isPregnant: boolean;
+  weightKg: number | null;
+  eps: string | null;
+  emergencyContacts: EmergencyContactInput[];
+  questionId: string;
+}
+
+export interface TelegramDraft {
+  eventId: string;
+  event: EventType;
+  status: PersonStatus;
+  location: GeoPoint;
+  severity: number;
+}
 
 /** Thrown when the two halves of the contract have drifted apart. */
 export class ContractDriftError extends Error {

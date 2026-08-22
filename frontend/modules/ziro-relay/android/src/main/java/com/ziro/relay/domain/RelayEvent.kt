@@ -15,6 +15,7 @@ sealed interface RelayEvent {
     data class PeerDisconnected(val peer: PeerId) : RelayEvent
     data class TelegramReceived(val telegram: Telegram, val from: PeerId) : RelayEvent
     data class TelegramSent(val id: String, val to: PeerId) : RelayEvent
+    data class TelegramDelivered(val id: String, val to: PeerId) : RelayEvent
     data class TelegramRejected(val reason: RejectReason, val from: PeerId) : RelayEvent
     data class StatusChanged(val status: EngineStatus) : RelayEvent
     data class RadioError(val message: String) : RelayEvent

@@ -25,7 +25,6 @@ class ForwardPending(
         val pending = ledger.pendingFor(peer).filter(RelayPolicy::shouldForward)
         for (telegram in pending) {
             transport.send(peer, TelegramCodec.encode(telegram))
-            ledger.markDelivered(telegram.id, peer)
         }
         return pending.size
     }

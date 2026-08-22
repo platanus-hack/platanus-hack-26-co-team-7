@@ -1,4 +1,6 @@
-import type { EngineStatus, RelayEvent, Telegram } from 'ziro-relay';
+import { NativeModulesProxy } from 'expo-modules-core';
+import { Platform } from 'react-native';
+import type { EngineStatus, ProfileInput, RelayEvent, RelayPermissions, Telegram, TelegramDraft } from 'ziro-relay';
 
 /**
  * PORT, on the JavaScript side. Owner: developer B.
@@ -19,11 +21,11 @@ export interface RelayClient {
   getStatus(): EngineStatus;
   start(): Promise<void>;
   stop(): Promise<void>;
-  sendTelegram(
-    eventId: string,
-    location: { lat: number; lng: number },
-    severity?: number,
-  ): Promise<Telegram>;
+  getPermissions(): RelayPermissions;
+  requestPermissions(): RelayPermissions;
+  getProfile(): Promise<ProfileInput>;
+  saveProfile(profile: ProfileInput): Promise<void>;
+  sendTelegram(draft: TelegramDraft): Promise<Telegram>;
   getLedger(): Promise<Telegram[]>;
   addRelayListener(listener: (event: RelayEvent) => void): { remove(): void };
 }
@@ -34,7 +36,7 @@ export interface RelayClient {
  * Keep it as a module constant rather than an env var: a single obvious line beats hunting
  * for why the app is showing invented data at 4am.
  */
-export const USE_FAKE_ENGINE = true;
+export const USE_FAKE_ENGINE = Platform.OS !== 'android' || NativeModulesProxy.ZiroRelay === undefined;
 
 export function createRelayClient(): RelayClient {
   if (USE_FAKE_ENGINE) {
@@ -47,6 +49,10 @@ export function createRelayClient(): RelayClient {
     getStatus: native.getStatus,
     start: native.start,
     stop: native.stop,
+    getPermissions: native.getPermissions,
+    requestPermissions: native.requestPermissions,
+    getProfile: native.getProfile,
+    saveProfile: native.saveProfile,
     sendTelegram: native.sendTelegram,
     getLedger: native.getLedger,
     addRelayListener: native.addRelayListener,

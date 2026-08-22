@@ -4,7 +4,9 @@ import com.ziro.relay.domain.EngineStatus
 import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.ports.EventBus
 import com.ziro.relay.ports.PeerTransport
+import com.ziro.relay.ports.TelegramLedger
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,20 +27,25 @@ class RelayEngine(
     private val transport: PeerTransport,
     private val bus: EventBus,
     private val forwardPending: ForwardPending,
+    private val ledger: TelegramLedger,
     private val scope: CoroutineScope,
 ) {
 
     private val _status = MutableStateFlow(EngineStatus.IDLE)
     val status: StateFlow<EngineStatus> = _status.asStateFlow()
+    private var observer: Job? = null
 
     fun start() {
+        if (observer?.isActive == true) return
+        observer = scope.launch { observeRadio() }
         transition(EngineStatus.ADVERTISING)
         transport.start()
-        scope.launch { observeRadio() }
     }
 
     fun stop() {
         transport.stop()
+        observer?.cancel()
+        observer = null
         transition(EngineStatus.IDLE)
     }
 
@@ -49,6 +56,8 @@ class RelayEngine(
                     transition(EngineStatus.SYNCING)
                     forwardPending(event.peer)
                 }
+
+                is RelayEvent.TelegramDelivered -> ledger.markDelivered(event.id, event.to)
 
                 is RelayEvent.PeerDisconnected -> {
                     val next = if (transport.peers.value.isEmpty()) {

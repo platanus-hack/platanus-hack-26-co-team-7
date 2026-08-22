@@ -1,4 +1,4 @@
-import type { EngineStatus, RelayEvent, Telegram } from 'ziro-relay';
+import type { EngineStatus, ProfileInput, RelayEvent, Telegram, TelegramDraft } from 'ziro-relay';
 
 import type { RelayClient } from './relayClient';
 
@@ -14,6 +14,14 @@ import type { RelayClient } from './relayClient';
  */
 
 const BOGOTA = { lat: 4.6097, lng: -74.0817 };
+
+const DEFAULT_PROFILE: ProfileInput = {
+  userId: 'USER123', fullName: 'Juan Perez', docType: 'CC', docNumber: '1020304050',
+  birthDate: '1991-03-14', bloodType: 'O', bloodRh: 'POSITIVE', allergies: ['penicilina'],
+  chronicConditions: ['diabetes'], medications: ['warfarina'], disability: 'NONE', isPregnant: false,
+  weightKg: 78, eps: 'Sanitas', emergencyContacts: [{ name: 'Ana Perez', phone: '+57...', relationship: 'madre' }],
+  questionId: 'PET_NAME_42',
+};
 
 function uuid(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -55,6 +63,7 @@ function sampleTelegram(overrides: Partial<Telegram> = {}): Telegram {
 
 export function createFakeRelayClient(): RelayClient {
   let status: EngineStatus = 'IDLE';
+  let profile = DEFAULT_PROFILE;
   const ledger = new Map<string, Telegram>();
   const listeners = new Set<(event: RelayEvent) => void>();
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -104,8 +113,30 @@ export function createFakeRelayClient(): RelayClient {
       setStatus('IDLE');
     },
 
-    async sendTelegram(eventId, location, severity = 3) {
-      const telegram = sampleTelegram({ event_id: eventId, location, severity });
+    getPermissions: () => ({ fake: true }),
+    requestPermissions: () => ({ fake: true }),
+
+    async getProfile() {
+      return profile;
+    },
+
+    async saveProfile(nextProfile) {
+      profile = nextProfile;
+    },
+
+    async sendTelegram(draft: TelegramDraft) {
+      if (!draft.eventId.trim()) throw new Error('An event identifier is required.');
+      if (draft.severity < 1 || draft.severity > 5) throw new Error('Severity must be between 1 and 5.');
+      const telegram = sampleTelegram({
+        user_id: profile.userId,
+        event_id: draft.eventId.trim(), event: draft.event, status: draft.status,
+        location: draft.location, severity: draft.severity,
+        vital: {
+          name: profile.fullName, age: 35, blood: `${profile.bloodType}${profile.bloodRh === 'POSITIVE' ? '+' : '-'}`,
+          allergies: profile.allergies, conditions: profile.chronicConditions, medications: profile.medications,
+          disability: profile.disability, pregnant: profile.isPregnant,
+        },
+      });
       // The origin stores its own telegram at hop 0 — store-and-forward starts here.
       ledger.set(telegram.id, telegram);
       emit({ type: 'TELEGRAM_SENT', peerId: 'fake-peer-01', telegramId: telegram.id });

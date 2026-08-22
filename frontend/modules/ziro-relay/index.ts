@@ -5,7 +5,10 @@ import {
   parseTelegram,
   type EngineStatus,
   type RelayEvent,
+  type RelayPermissions,
+  type ProfileInput,
   type Telegram,
+  type TelegramDraft,
 } from './src/ZiroRelay.types';
 
 export * from './src/ZiroRelay.types';
@@ -20,14 +23,15 @@ export * from './src/ZiroRelay.types';
 interface ZiroRelayNativeModule {
   getStatus(): EngineStatus;
   getOriginHash(): string;
+  getProfile(): Promise<string>;
+  saveProfile(profile: string): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
+  getPermissions(): RelayPermissions;
+  requestPermissions(): RelayPermissions;
   /** Returns the created telegram as a wire JSON string. */
   sendTelegram(
-    eventId: string,
-    lat: number,
-    lng: number,
-    severity: number,
+    draft: string,
   ): Promise<string>;
   /** The whole local ledger as a JSON array of telegrams. */
   getLedger(): Promise<string>;
@@ -44,6 +48,14 @@ export function getOriginHash(): string {
   return native.getOriginHash();
 }
 
+export async function getProfile(): Promise<ProfileInput> {
+  return JSON.parse(await native.getProfile()) as ProfileInput;
+}
+
+export function saveProfile(profile: ProfileInput): Promise<void> {
+  return native.saveProfile(JSON.stringify(profile));
+}
+
 export function start(): Promise<void> {
   return native.start();
 }
@@ -52,12 +64,16 @@ export function stop(): Promise<void> {
   return native.stop();
 }
 
-export async function sendTelegram(
-  eventId: string,
-  location: { lat: number; lng: number },
-  severity = 3,
-): Promise<Telegram> {
-  const wire = await native.sendTelegram(eventId, location.lat, location.lng, severity);
+export function getPermissions(): RelayPermissions {
+  return native.getPermissions();
+}
+
+export function requestPermissions(): RelayPermissions {
+  return native.requestPermissions();
+}
+
+export async function sendTelegram(draft: TelegramDraft): Promise<Telegram> {
+  const wire = await native.sendTelegram(JSON.stringify(draft));
   return parseTelegram(wire);
 }
 
