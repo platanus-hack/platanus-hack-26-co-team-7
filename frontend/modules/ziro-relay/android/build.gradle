@@ -52,6 +52,13 @@ dependencies {
   implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
   implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3'
 
+  // Required for ActivityResultContracts.RequestMultiplePermissions and registerForActivityResult.
+  // activity-ktx pulls both the core activity classes and the activity-result package that
+  // hosts ActivityResultContracts; react-android's transitive activity is at implementation
+  // scope so we redeclare at 1.8.2 (a known-good version that exports the contracts API on
+  // this Gradle 8.14.3 + AGP combination).
+  implementation 'androidx.activity:activity-ktx:1.8.2'
+
   testImplementation 'junit:junit:4.13.2'
   testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0'
 }

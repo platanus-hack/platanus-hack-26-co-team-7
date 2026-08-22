@@ -155,3 +155,40 @@ function requireString(t: Record<string, unknown>, field: string): void {
 function requireNumber(t: Record<string, unknown>, field: string): void {
   if (typeof t[field] !== 'number') throw new ContractDriftError(field, t[field]);
 }
+
+/**
+ * Result of a runtime permission request for Nearby Connections + the foreground service.
+ *
+ * Mirrors the JSON produced by ZiroRelayModule.requestPermissions(). Both lists contain
+ * fully-qualified Android permission strings, e.g. "android.permission.BLUETOOTH_SCAN".
+ */
+export interface PermissionResult {
+  granted: string[];
+  denied: string[];
+}
+
+/**
+ * Parses the permission request payload and fails loudly on drift. The Kotlin bridge uses
+ * the same `Json` instance for permission results and telegrams, so the shape and ordering
+ * are identical to what `parseTelegram` expects at the root level — just two string arrays.
+ */
+export function parsePermissionResult(wireJson: string): PermissionResult {
+  const raw: unknown = JSON.parse(wireJson);
+
+  if (typeof raw !== 'object' || raw === null) {
+    throw new ContractDriftError('<root>', raw);
+  }
+  const r = raw as Record<string, unknown>;
+
+  if (!Array.isArray(r.granted)) {
+    throw new ContractDriftError('granted', r.granted);
+  }
+  if (!Array.isArray(r.denied)) {
+    throw new ContractDriftError('denied', r.denied);
+  }
+
+  return {
+    granted: r.granted.filter((x): x is string => typeof x === 'string'),
+    denied: r.denied.filter((x): x is string => typeof x === 'string'),
+  };
+}

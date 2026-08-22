@@ -2,8 +2,10 @@ import { requireNativeModule } from 'expo-modules-core';
 import type { EventSubscription } from 'expo-modules-core';
 
 import {
+  parsePermissionResult,
   parseTelegram,
   type EngineStatus,
+  type PermissionResult,
   type RelayEvent,
   type Telegram,
 } from './src/ZiroRelay.types';
@@ -31,6 +33,13 @@ interface ZiroRelayNativeModule {
   ): Promise<string>;
   /** The whole local ledger as a JSON array of telegrams. */
   getLedger(): Promise<string>;
+  /**
+   * Request all runtime permissions Nearby Connections + the foreground service need.
+   * Returns the wire JSON: {"granted":[...], "denied":[...]}. `start()` calls this
+   * internally — you only need to call it explicitly if you want to preflight the
+   * permissions before showing the start button (e.g. to render a "we need these" hint).
+   */
+  requestPermissions(): Promise<string>;
   addListener(event: 'onRelayEvent', listener: (payload: RelayEvent) => void): EventSubscription;
 }
 
@@ -73,6 +82,19 @@ export async function getLedger(): Promise<Telegram[]> {
   const raw: unknown = JSON.parse(wire);
   if (!Array.isArray(raw)) return [];
   return raw.map((item) => parseTelegram(JSON.stringify(item)));
+}
+
+/**
+ * Requests the runtime permissions Nearby Connections needs to discover and advertise.
+ *
+ * `start()` already invokes this internally and rejects if anything is denied, so most UI
+ * flows never need to call this directly. The explicit form is here for the rare case
+ * where the app wants to check or preflight permissions before the user can press start
+ * — e.g. to disable the start button and show a rationale screen.
+ */
+export async function requestPermissions(): Promise<PermissionResult> {
+  const wire = await native.requestPermissions();
+  return parsePermissionResult(wire);
 }
 
 export function addRelayListener(
