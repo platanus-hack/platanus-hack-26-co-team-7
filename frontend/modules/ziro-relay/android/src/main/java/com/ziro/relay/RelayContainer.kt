@@ -7,6 +7,7 @@ import com.ziro.relay.adapters.ledger.SqliteTelegramLedger
 import com.ziro.relay.adapters.nearby.NearbyTransport
 import com.ziro.relay.adapters.profile.SqliteProfileStore
 import com.ziro.relay.adapters.sqlite.RelayDatabase
+import com.ziro.relay.adapters.sqlite.LegacySharedPreferencesMigration
 import com.ziro.relay.application.ForwardPending
 import com.ziro.relay.application.IngestTelegram
 import com.ziro.relay.application.RelayEngine
@@ -56,6 +57,7 @@ object RelayContainer {
             ?: UUID.randomUUID().toString().take(8).also { identity.edit().putString("origin_hash", it).apply() }
         bus = SharedFlowEventBus()
         val database = RelayDatabase(appContext)
+        LegacySharedPreferencesMigration(appContext, database).run()
         ledger = SqliteTelegramLedger(database)
         signer = HmacSha256Signer()
         profiles = SqliteProfileStore(database)

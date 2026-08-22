@@ -15,12 +15,15 @@ class RelayDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VE
             "CREATE TABLE delivery (telegram_id TEXT NOT NULL, peer_id TEXT NOT NULL, PRIMARY KEY (telegram_id, peer_id), " +
                 "FOREIGN KEY (telegram_id) REFERENCES telegram(id) ON DELETE CASCADE)",
         )
+        db.execSQL("CREATE TABLE migration (name TEXT PRIMARY KEY)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) db.execSQL("CREATE TABLE IF NOT EXISTS migration (name TEXT PRIMARY KEY)")
+    }
 
     private companion object {
         const val NAME = "ziro_relay.sqlite"
-        const val VERSION = 1
+        const val VERSION = 2
     }
 }

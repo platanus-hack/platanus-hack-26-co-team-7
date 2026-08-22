@@ -20,6 +20,7 @@ import com.ziro.relay.domain.Profile
 import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
+import com.ziro.relay.domain.identityAnswerHash
 import expo.modules.kotlin.activityresult.AppContextActivityResultContract
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.functions.Coroutine
@@ -34,7 +35,6 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.LocalDate
 
@@ -362,10 +362,12 @@ private data class ProfileInput(
         }
         require(runCatching { LocalDate.parse(birthDate.trim()) }.isSuccess) { "Birth date must be ISO-8601 (YYYY-MM-DD)" }
         require(weightKg == null || weightKg > 0) { "Weight must be a positive number" }
-        val answerHash = identityAnswer?.trim()?.takeIf(String::isNotBlank)?.let(::sha256)
+        val deviceSecret = current?.deviceSecret ?: randomSecret()
+        val answerHash = identityAnswer?.trim()?.takeIf(String::isNotBlank)?.let {
+            identityAnswerHash(deviceSecret, it)
+        }
             ?: current?.answerHash
             ?: throw IllegalArgumentException("An identity answer is required the first time you save your profile")
-        val deviceSecret = current?.deviceSecret ?: randomSecret()
         return Profile(
             userId.trim(), fullName.trim(), docType, docNumber.trim(), birthDate.trim(), bloodType, bloodRh,
             allergies.map(String::trim).filter(String::isNotBlank),
@@ -395,10 +397,6 @@ private data class ProfileInput(
         )
     }
 }
-
-private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
-    .digest(value.toByteArray(Charsets.UTF_8))
-    .joinToString("") { "%02x".format(it) }
 
 private fun randomSecret(): String = ByteArray(32).also(SecureRandom()::nextBytes)
     .joinToString("") { "%02x".format(it) }
