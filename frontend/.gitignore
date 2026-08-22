@@ -17,3 +17,5 @@ modules/*/android/build/
 .DS_Store
 
 .atl
+
+package-lock.json
