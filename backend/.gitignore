@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Local env
+.env
+
+# SQLite dev artifacts (smoke tests only; production is PostgreSQL)
+*.db
