@@ -2,7 +2,7 @@
 
 ## Concepto
 
-El **telegrama** transporta metadata (~120 bytes). El **video/audio** del evento se maneja por separado, con un patrón diferente. Aquí definimos los patrones posibles y cuál elegimos para ZIRO.
+El **telegrama** transporta metadata (~550-700 bytes). El **video/audio** del evento se maneja por separado, con un patrón diferente. Aquí definimos los patrones posibles y cuál elegimos para ZIRO.
 
 ## Tres patrones posibles
 

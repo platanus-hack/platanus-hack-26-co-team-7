@@ -134,7 +134,7 @@ Y no es capricho: re-serializar puede cambiar el orden de los campos o el format
 
 ### Puerto, no implementación
 
-Para el MVP el ledger es `InMemoryLedger` (un `LinkedHashMap`), detrás del puerto `ports/TelegramLedger.kt`. Room llega en Fase 5 y el swap es **una línea en `AppContainer`**. Nada arriba del puerto cambia — esa es la razón por la que el puerto existe.
+Para el MVP el ledger es `InMemoryLedger` (un `LinkedHashMap`), detrás del puerto `ports/TelegramLedger.kt`. Room llega en Fase 5 y el swap es **una línea en `RelayContainer`**. Nada arriba del puerto cambia — esa es la razón por la que el puerto existe.
 
 ### Por qué dos tablas (messages + hops)
 
@@ -274,7 +274,9 @@ suspend fun runDueWipes(now: Long) {
 
 **Lo que se conserva después del wipe:** `id`, `user_id`, `event_id`, `event`, `timestamp`, `severity`, `hop`, `ttl`, `origin`, `status`. Suficiente para estadísticas anonimizadas ("fueron N personas afectadas en el evento EARTHQUAKE001"), nada más.
 
-**Lo que se borra:** `name`, `blood`, `age`, `medical_note`, `family_contact`, `location`, `question_id`, `answer_hash`. Datos que un atacante podría usar para identificar, localizar o contactar a la persona.
+**Lo que se borra:** el bloque `vital` completo (`name`, `age`, `blood`, `allergies`, `conditions`, `medications`, `disability`, `pregnant`), `location` y el bloque `verify` (`question_id`, `answer_hash`). Datos que un atacante podría usar para identificar, localizar o contactar a la persona.
+
+Nota: `family_contact` y el documento **ya no viajan en el telegrama** (ver `protocol.md`), así que no hay nada que borrar del payload. Sí viven en la tabla `profile` del dueño del teléfono, y esa tabla se protege con SQLCipher, no con el wipe.
 
 ## Protocolo de gossip (sync entre pares)
 
