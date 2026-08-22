@@ -114,7 +114,10 @@ export function createFakeRelayClient(): RelayClient {
     },
 
     getPermissions: () => ({ fake: true }),
-    requestPermissions: () => ({ fake: true }),
+    async requestPermissions() {
+      // Fake: pretend the relevant permissions are already granted so the UI keeps working.
+      return { granted: ['FAKE'], denied: [] };
+    },
 
     async getProfile() {
       return profile;

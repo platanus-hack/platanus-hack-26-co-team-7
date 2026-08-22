@@ -1,6 +1,14 @@
 import { NativeModulesProxy } from 'expo-modules-core';
 import { Platform } from 'react-native';
-import type { EngineStatus, ProfileInput, RelayEvent, RelayPermissions, Telegram, TelegramDraft } from 'ziro-relay';
+import type {
+  EngineStatus,
+  PermissionResult,
+  ProfileInput,
+  RelayEvent,
+  RelayPermissions,
+  Telegram,
+  TelegramDraft,
+} from 'ziro-relay';
 
 /**
  * PORT, on the JavaScript side. Owner: developer B.
@@ -22,7 +30,12 @@ export interface RelayClient {
   start(): Promise<void>;
   stop(): Promise<void>;
   getPermissions(): RelayPermissions;
-  requestPermissions(): RelayPermissions;
+  /**
+   * Returns the structured result of requesting the runtime permissions Nearby Connections
+   * + the foreground service need. start() calls this internally and rejects if any are
+   * denied; only call this directly to preflight before showing the start button.
+   */
+  requestPermissions(): Promise<PermissionResult>;
   getProfile(): Promise<ProfileInput>;
   saveProfile(profile: ProfileInput): Promise<void>;
   sendTelegram(draft: TelegramDraft): Promise<Telegram>;

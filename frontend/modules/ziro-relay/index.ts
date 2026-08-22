@@ -30,13 +30,6 @@ interface ZiroRelayNativeModule {
   start(): Promise<void>;
   stop(): Promise<void>;
   getPermissions(): RelayPermissions;
-  requestPermissions(): RelayPermissions;
-  /** Returns the created telegram as a wire JSON string. */
-  sendTelegram(
-    draft: string,
-  ): Promise<string>;
-  /** The whole local ledger as a JSON array of telegrams. */
-  getLedger(): Promise<string>;
   /**
    * Request all runtime permissions Nearby Connections + the foreground service need.
    * Returns the wire JSON: {"granted":[...], "denied":[...]}. `start()` calls this
@@ -44,6 +37,12 @@ interface ZiroRelayNativeModule {
    * permissions before showing the start button (e.g. to render a "we need these" hint).
    */
   requestPermissions(): Promise<string>;
+  /** Returns the created telegram as a wire JSON string. */
+  sendTelegram(
+    draft: string,
+  ): Promise<string>;
+  /** The whole local ledger as a JSON array of telegrams. */
+  getLedger(): Promise<string>;
   addListener(event: 'onRelayEvent', listener: (payload: RelayEvent) => void): EventSubscription;
 }
 
@@ -75,10 +74,6 @@ export function stop(): Promise<void> {
 
 export function getPermissions(): RelayPermissions {
   return native.getPermissions();
-}
-
-export function requestPermissions(): RelayPermissions {
-  return native.requestPermissions();
 }
 
 export async function sendTelegram(draft: TelegramDraft): Promise<Telegram> {

@@ -1,8 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import type { EngineStatus, ProfileInput, RelayPermissions, Telegram, TelegramDraft } from 'ziro-relay';
+import type {
+  EngineStatus,
+  PermissionResult,
+  ProfileInput,
+  RelayPermissions,
+  Telegram,
+  TelegramDraft,
+} from 'ziro-relay';
 
 import { createRelayClient } from '../native/relayClient';
+
+/** Convert the sync grant-state map (getPermissions) into the structured result shape
+ *  (requestPermissions) so the hook can store a single `permissions` value across both. */
+function toPermissionResult(perms: RelayPermissions): PermissionResult {
+  const granted: string[] = [];
+  const denied: string[] = [];
+  for (const [key, value] of Object.entries(perms)) {
+    (value ? granted : denied).push(key);
+  }
+  return { granted, denied };
+}
 
 /**
  * The only place the UI talks to the engine. Owner: developer B.
@@ -21,7 +39,7 @@ export function useRelay() {
   const [peers, setPeers] = useState<string[]>([]);
   const [lastReject, setLastReject] = useState<string | null>(null);
   const [radioError, setRadioError] = useState<string | null>(null);
-  const [permissions, setPermissions] = useState<RelayPermissions>({});
+  const [permissions, setPermissions] = useState<PermissionResult>({ granted: [], denied: [] });
   const [deliveries, setDeliveries] = useState<Record<string, string>>({});
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +53,7 @@ export function useRelay() {
   useEffect(() => {
     mounted.current = true;
     setStatus(client.getStatus());
-    setPermissions(client.getPermissions());
+    setPermissions(toPermissionResult(client.getPermissions()));
     void refresh();
     void client.getProfile().then(setProfile).catch((reason: unknown) => setError(messageFor(reason)));
 
@@ -73,7 +91,7 @@ export function useRelay() {
       }
     });
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') setPermissions(client.getPermissions());
+      if (nextState === 'active') setPermissions(toPermissionResult(client.getPermissions()));
     });
 
     return () => {
@@ -95,7 +113,11 @@ export function useRelay() {
     error,
     start: client.start,
     stop: client.stop,
-    requestPermissions: useCallback(() => setPermissions(client.requestPermissions()), [client]),
+    requestPermissions: useCallback(async () => {
+      const result = await client.requestPermissions();
+      setPermissions(result);
+      return result;
+    }, [client]),
     saveProfile: useCallback(async (nextProfile: ProfileInput) => {
       try {
         await client.saveProfile(nextProfile);
