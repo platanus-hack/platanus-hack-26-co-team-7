@@ -1,1 +1,1 @@
-"""Scripts package for the ZIRO backend (demo seed utilities)."""
+"""Scripts package for the Replica backend (demo seed utilities)."""

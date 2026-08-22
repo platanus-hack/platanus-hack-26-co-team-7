@@ -1,4 +1,4 @@
-# DECISIONS — Memoria del proyecto ZIRO
+# DECISIONS — Memoria del proyecto Replica
 
 > Este archivo es el sustituto de Engram para esta sesión. Centraliza las decisiones de diseño, las ideas discutidas, los tradeoffs considerados y lo que se rechazó. **Léanlo antes de empezar a codear** — está pensado para que el equipo entero entienda el "por qué" de cada decisión sin tener que repetir la conversación.
 
@@ -6,7 +6,7 @@
 
 ## Tesis central del proyecto (en una frase)
 
-**ZIRO** es una red de comunicación de emergencia que convierte los teléfonos Android en una **red temporal que se auto-enriquece** — cuando la infraestructura celular colapsa, transporta pequeños telegramas de emergencia (~120 bytes) entre dispositivos vía Wi-Fi Direct / BLE, sin Internet, y simultáneamente **va acumulando un registro distribuido de emergencias en cada nodo** que crece orgánicamente con cada interacción.
+**Replica** es una red de comunicación de emergencia que convierte los teléfonos Android en una **red temporal que se auto-enriquece** — cuando la infraestructura celular colapsa, transporta pequeños telegramas de emergencia (~120 bytes) entre dispositivos vía Wi-Fi Direct / BLE, sin Internet, y simultáneamente **va acumulando un registro distribuido de emergencias en cada nodo** que crece orgánicamente con cada interacción.
 
 ---
 
@@ -30,19 +30,19 @@ Tres categorías necesitan comunicar:
 ## Las 5 ideas centrales que el equipo tiene que tener CLARAS
 
 ### 1. **Store-and-Forward + Gossip — NO mesh routing IP**
-No es B.A.T.M.A.N., no es cjdns, no es Yggdrasil. Es ferry de mensajes: A le pasa a B, B guarda y reenvía, y además **sincroniza su ledger completo con cada par**. Esto es lo que hace ZIRO diferente de cualquier mesh messenger genérico.
+No es B.A.T.M.A.N., no es cjdns, no es Yggdrasil. Es ferry de mensajes: A le pasa a B, B guarda y reenvía, y además **sincroniza su ledger completo con cada par**. Esto es lo que hace Replica diferente de cualquier mesh messenger genérico.
 
 ### 2. **Cada nodo acumula un ledger distribuido**
-Cuando A se encuentra con B, NO solo le pasa sus telegramas nuevos; **sincronizan sus bases completas** (metadata primero, después bytes). Esto convierte al nodo en un repositorio activo. **Caso de uso nuevo**: un rescatista con ZIRO offline puede ver la lista de personas reportadas en la zona sin Internet.
+Cuando A se encuentra con B, NO solo le pasa sus telegramas nuevos; **sincronizan sus bases completas** (metadata primero, después bytes). Esto convierte al nodo en un repositorio activo. **Caso de uso nuevo**: un rescatista con Replica offline puede ver la lista de personas reportadas en la zona sin Internet.
 
 ### 3. **El telegrama es chico a propósito — ~120 bytes**
 La gracia NO es transferir archivos pesados por los nodos (eso es inviable en 36h). La gracia es que el telegrama cabe en una sola trama BLE/Wi-Fi Direct y se transmite en milisegundos. El video/audio se sube después por otro canal (lazy upload desde el origen).
 
 ### 4. **El origen se auto-protege**
-Si la persona tiene que irse y deja el teléfono, el origen **ya repartió los primeros 15-30 segundos del video entre los primeros 2-3 ZIRO que encontró** (Opción 2). Si queda solo, sigue transmitiendo un beacon BLE cada 60s (Opción 1). **La información nunca queda en un solo lugar.**
+Si la persona tiene que irse y deja el teléfono, el origen **ya repartió los primeros 15-30 segundos del video entre los primeros 2-3 Replica que encontró** (Opción 2). Si queda solo, sigue transmitiendo un beacon BLE cada 60s (Opción 1). **La información nunca queda en un solo lugar.**
 
 ### 5. **Trigger externo, no detección propia**
-ZIRO no detecta sismos. Usa EMSC / un endpoint propio / un botón manual como trigger. Evita reinventar la rueda y enfoca el esfuerzo en lo diferencial.
+Replica no detecta sismos. Usa EMSC / un endpoint propio / un botón manual como trigger. Evita reinventar la rueda y enfoca el esfuerzo en lo diferencial.
 
 ---
 
@@ -111,13 +111,13 @@ Lo menor (parámetros exactos de backoff WS, estrategia idempotente del seed, es
 | Evidencia (video/audio) | Patrón C: telegrama rápido + upload perezoso del video | Defendible en 36h, honesto con el usuario | Patrón A (riesgo pérdida), Patrón B (complejidad brutal) |
 | **Estado del nodo** | 5 estados (IDLE/ADVERTISING/SYNC/RELAY/ORPHAN) — comportamiento de red | Maneja todos los casos incluyendo abandono | Sin estado (race conditions), 3 estados (insuficiente) |
 | **Estado de la persona** | **3 estados (EMERGENCY/NEED_HELP/SAFE)** — ortogonales a los del nodo | El comportamiento de la red (nodo) es independiente del estado del afectado (persona). NEED_HELP tiene prioridad sobre EMERGENCY. | Confundir ambos (rompe modelo mental, rompe lógica de prioridad en backend) |
-| **Verificación SAFE** | **`question_id` + `answer_hash`** en el telegrama; **la respuesta en claro nunca viaja por la red mesh**; el backend compara el hash | Si un atacante escucha la red, no ve respuestas. Compatible con C5 (familiar responde desde otro ZIRO). | Pregunta + respuesta en claro (filtra privacidad, ataque trivial al eavesdropping), comparación local en cada nodo (inconsistente, sin fuente única de verdad) |
+| **Verificación SAFE** | **`question_id` + `answer_hash`** en el telegrama; **la respuesta en claro nunca viaja por la red mesh**; el backend compara el hash | Si un atacante escucha la red, no ve respuestas. Compatible con C5 (familiar responde desde otro Replica). | Pregunta + respuesta en claro (filtra privacidad, ataque trivial al eavesdropping), comparación local en cada nodo (inconsistente, sin fuente única de verdad) |
 | Seguridad | HMAC-SHA256 con device_secret | Blinda MITM | Sin firma (riesgo USENIX 2022 sobre Bridgefy) |
-| Servicio de discovery | `serviceId = "ziro.relay.v1"` | Versionado, permite migración futura | Hardcoded sin versión |
+| Servicio de discovery | `serviceId = "replica.relay.v1"` | Versionado, permite migración futura | Hardcoded sin versión |
 
 ---
 
-## Lo que **NO** es ZIRO
+## Lo que **NO** es Replica
 
 - ❌ No es detector de sismos (usa EMSC o trigger externo).
 - ❌ No es messenger general (Briar, Bridgefy, Signal ya existen).
@@ -138,7 +138,7 @@ Lo menor (parámetros exactos de backoff WS, estrategia idempotente del seed, es
 | **ShakeAlert / Google EEW** | Alertas tempranas server-push | No transporta evidencia, push unidireccional |
 | **Ushahidi** | Plataforma de mapeo de crisis | Requiere SMS o web, no funciona offline P2P |
 
-**ZIRO específicamente** combina: registro distribuido + gossip + auto-supervivencia del origen + caso de uso de rescatistas offline en un solo producto.
+**Replica específicamente** combina: registro distribuido + gossip + auto-supervivencia del origen + caso de uso de rescatistas offline en un solo producto.
 
 ---
 
@@ -150,7 +150,7 @@ Lo menor (parámetros exactos de backoff WS, estrategia idempotente del seed, es
 - **iOS support:** fuera de scope para 36h
 - **CBOR/MessagePack para telegrama:** no core, JSON alcanza
 - ✅ **Modelo de identidad (cerrado 2026-08-22):** el perfil del usuario (nombre, documento, tipo de sangre, contactos de emergencia, `question_id`/`answer_hash`) se carga en el **flujo de onboarding al instalar la app**, antes de cualquier evento. El perfil vive localmente cifrado (SQLite + SQLCipher).
-- ✅ **Acceso de familiares (cerrado 2026-08-22):** los familiares **deben instalar ZIRO** para participar en flujos offline (caso C5 de `orphan-device.md` — un familiar marca SAFE desde otro dispositivo). SMS / web ligera / app companion queda fuera del MVP.
+- ✅ **Acceso de familiares (cerrado 2026-08-22):** los familiares **deben instalar Replica** para participar en flujos offline (caso C5 de `orphan-device.md` — un familiar marca SAFE desde otro dispositivo). SMS / web ligera / app companion queda fuera del MVP.
 - ✅ **Rescatistas (cerrado 2026-08-22):** la visión final es un **dashboard web centralizado** (online-only, requiere backend). Para el MVP del hackathon, los rescatistas también usan la **app móvil** con una vista read-only del ledger local. El dashboard web es post-hackathon.
 
 ---
@@ -158,7 +158,7 @@ Lo menor (parámetros exactos de backoff WS, estrategia idempotente del seed, es
 ## Conceptos técnicos que el equipo tiene que entender
 
 - **TTL vs Hop**: TTL = cuántos saltos le QUEDAN al mensaje antes de morir. Hop = cuántos saltos YA hizo. Ortogonales.
-- **ServiceId** `"ziro.relay.v1"` — el identificador del servicio Nearby Connections. Filtra qué peers son ZIRO.
+- **ServiceId** `"replica.relay.v1"` — el identificador del servicio Nearby Connections. Filtra qué peers son Replica.
 - **Dedup por ID** = el corazón del protocolo. Si ya tenés el UUID, no proceses de nuevo.
 - **Estrategia P2P_STAR** = un nodo central con varios periféricos. Modela nuestro caso "un origen + varios relays".
 - **HMAC** = firma criptográfica con clave compartida. Imposible de falsificar sin la clave.

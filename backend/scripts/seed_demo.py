@@ -128,6 +128,7 @@ def seed(session_sessionmaker=SessionLocal, target_engine=engine) -> dict[str, i
             event, cells, reports = build_rows(datetime.now(timezone.utc))
 
             session.add(event)
+            session.flush()  # ensure event exists before FK-dependent rows (PostgreSQL enforces FKs)
             session.add_all(cells)
             session.add_all(reports)
 
@@ -137,7 +138,7 @@ def seed(session_sessionmaker=SessionLocal, target_engine=engine) -> dict[str, i
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Seed the ZIRO database with demo dashboard data: one open "
+            "Seed the Replica database with demo dashboard data: one open "
             f"earthquake event ({DEMO_EVENT_ID}), H3 res-{H3_CELL_RESOLUTION} "
             "cells around Bogotá with varied intensities over two time "
             "windows, and AI-style reports (schema v1)."

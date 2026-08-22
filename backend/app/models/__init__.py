@@ -1,4 +1,4 @@
-"""ZIRO backend models package.
+"""Replica backend models package.
 
 Re-exports every ORM model and enum so that ``import app.models`` registers
 all tables on ``Base.metadata`` (required for ``create_all`` / Alembic).

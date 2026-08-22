@@ -4,73 +4,104 @@
 
 El telegrama es un objeto JSON muy pequeño (~120-200 bytes) que viaja entre nodos. Es la **única unidad de información obligatoria** que cruza la red mesh.
 
-### Schema del telegrama (v1)
+### Schema del telegrama (v2)
+
+> **v2 (2026-08-22):** se reestructura con bloques anidados `vital` y `verify`, y **`family_contact` sale del telegrama** — el backend ya tiene los teléfonos del perfil cargado en onboarding y resuelve por `user_id`. Ver `DECISIONS.md`.
 
 ```json
 {
-  "v": 1,
+  "v": 2,
   "id": "a8f29c3f-7b9e-4a1d-8e2f-1c5b9d6e3f4a",
   "user_id": "USER123",
   "event_id": "EARTHQUAKE001",
   "event": "EARTHQUAKE",
-  "name": "Juan Perez",
-  "blood": "O+",
-  "age": 35,
-  "medical_note": "diabético",
-  "family_contact": "+57...",
-  "location": { "lat": 4.6097, "lng": -74.0817 },
   "status": "EMERGENCY",
-  "question_id": "PET_NAME_42",
-  "answer_hash": "abcxyz...",
-  "timestamp": 1787440000,
   "severity": 3,
+  "location": { "lat": 4.6097, "lng": -74.0817 },
+  "timestamp": 1787440000,
   "hop": 0,
   "ttl": 8,
-  "origin": "device_short_hash"
+  "origin": "d4f8a2b1",
+  "vital": {
+    "name": "Juan Perez",
+    "age": 35,
+    "blood": "O+",
+    "allergies": ["penicilina"],
+    "conditions": ["diabetes"],
+    "medications": ["warfarina"],
+    "disability": "NONE",
+    "pregnant": false
+  },
+  "verify": {
+    "question_id": "PET_NAME_42",
+    "answer_hash": "abcxyz..."
+  },
+  "hmac": "9f2a..."
 }
 ```
 
-### Campos
+### Campos raíz
 
 | Campo | Tipo | Requerido | Descripción |
 |---|---|---|---|
-| `v` | int | sí | Versión del protocolo. Permite migración futura. |
+| `v` | int | sí | Versión del protocolo (`2`). Permite migración futura. |
 | `id` | UUID v4 (string) | sí | Identificador único del mensaje. **Es la clave de deduplicación universal.** |
-| `user_id` | string | sí | Identificador anónimo de la persona afectada (estable entre telegramas de la misma persona). |
-| `event_id` | string | sí | Identificador de la instancia del evento disparador (ej: `EARTHQUAKE001`). Permite agrupar todos los telegramas de un mismo desastre. |
-| `event` | enum string | sí | Tipo de evento: `EARTHQUAKE`, `FIRE`, `FLOOD`, `MEDICAL`, `OTHER`. Útil para filtrado y UI. |
-| `name` | string \| null | no | Nombre completo del usuario (viene del perfil pre-cargado). |
-| `blood` | string \| null | no | Tipo de sangre (ej: `"O+"`, `"A-"`). |
-| `age` | int \| null | no | Edad de la persona. |
-| `medical_note` | string \| null | no | Nota médica breve (`"diabético"`, `"alergia a penicilina"`). |
-| `family_contact` | string \| null | no | Teléfono o email del familiar a notificar. |
-| `location` | { `lat`: float, `lng`: float } | sí | Coordenadas decimales (4 decimales = ~11m de precisión). |
+| `user_id` | string | sí | Identificador anónimo estable de la persona afectada. |
+| `event_id` | string | sí | Identificador de la instancia del evento disparador (ej: `EARTHQUAKE001`). Agrupa todos los telegramas de un mismo desastre. |
+| `event` | enum string | sí | Tipo de evento: `EARTHQUAKE`, `FIRE`, `FLOOD`, `MEDICAL`, `OTHER`. |
 | `status` | enum string | sí | Estado de la persona: `EMERGENCY`, `NEED_HELP`, `SAFE`. Ver sección 4. |
-| `question_id` | string \| null | no | ID de la pregunta de verificación (ej: `"PET_NAME_42"`). La pregunta en sí **no viaja en el telegrama** — solo el id. |
-| `answer_hash` | string \| null | no | Hash SHA-256 (hex) de la respuesta esperada. **La respuesta en claro nunca viaja por la red mesh** — la comparación se hace en el backend. |
-| `timestamp` | int (epoch seconds) | sí | Momento en que se generó el telegrama en el origen. |
 | `severity` | int (1-5) | sí | 1=leve, 5=catastrófico. Lo setea el origen o el trigger externo. |
-| `hop` | int | sí | Contador de saltos. Inicia en 0, se incrementa en cada relay. |
-| `ttl` | int | sí | Time-to-live en saltos. Inicia en 8, decrementa en cada relay. Si llega a 0, se descarta. |
+| `location` | { `lat`, `lng` } | sí | Coordenadas decimales (4 decimales ≈ 11 m). |
+| `timestamp` | int (epoch seconds) | sí | Momento en que se generó el telegrama en el origen. |
+| `hop` | int | sí | Saltos ya realizados. Inicia en 0. |
+| `ttl` | int | sí | Time-to-live en saltos. Inicia en 8; al llegar a 0 se descarta. |
 | `origin` | string hash | sí | Hash corto del dispositivo origen (no expone identidad real). |
+| `vital` | objeto \| null | condicional | Snapshot médico para triage offline (ver abajo). Null si no hay perfil cargado. |
+| `verify` | objeto \| null | condicional | `{ question_id, answer_hash }` para transición a SAFE. Null si no aplica. |
+| `hmac` | string | recomendado | HMAC-SHA256 del telegrama (Regla 5). |
 
-### Versión serializada (compacta)
+### Bloque `vital` — qué VIAJA y por qué
 
-Para minimizar bytes en el aire, en producción se puede usar **CBOR** o **MessagePack** en lugar de JSON. Para la demo del hackathon, **JSON string** alcanza porque:
+El criterio NO es "qué es importante", sino: **¿qué necesita un rescatista SIN Internet en los próximos 10 minutos?**
 
-- 200 bytes × N telegrams = trivial comparado con el tiempo de handshake P2P.
-- Debug más fácil (se puede loguear y leer).
+VIAJA en claro porque cambia cómo actúa el rescatista en el lugar:
 
-Si en 36h sobra tiempo, se puede meter CBOR. Pero NO es core.
+| Campo | Para qué |
+|---|---|
+| `name` | Identificación humana en el punto de rescate |
+| `age` | Triage y dosificación |
+| `blood` | Transfusión (ABO+Rh) |
+| `allergies` | Penicilina, látex — mata si no se sabe |
+| `conditions` | Diabetes, epilepsia, cardíaco, asma |
+| `medications` | Anticoagulantes cambian todo en trauma |
+| `disability` | Define CÓMO se rescata: ¿camina o hay que cargarlo? |
+| `pregnant` | Cambia la prioridad de triage drásticamente |
+
+**NO viaja** (el backend lo tiene del onboarding, resuelto por `user_id`): `doc_type`, `doc_number`, `eps`, teléfonos de contactos de emergencia, `device_secret`. Un rescatista no necesita la cédula para salvarte — pero nombre + cédula + sangre + ubicación GPS en el SQLite sin cifrar de un desconocido, saltando por 8 teléfonos ajenos, es un kit de robo de identidad en tránsito.
+
+`family_contact` fue eliminado del telegrama en v2: la notificación a la familia es responsabilidad del backend usando los contactos del perfil registrado en onboarding.
+
+**Trade-off aceptado:** si alguien nunca completó el onboarding con Internet, el backend no tiene su perfil y la notificación a la familia falla. Documentado como limitación del MVP.
+
+### Tamaño real (corrección honesta)
+
+El "~120 bytes, cabe en una sola trama BLE" de versiones anteriores era doctrina, no física:
+
+- Un advertisement BLE legacy son **31 bytes** — ni siquiera un telegrama de 200 bytes cabía ahí.
+- Nearby Connections **no manda payloads por advertisements**: usa BLE para *discovery* y después Bluetooth Classic o Wi-Fi para el canal de datos (`Payload.fromBytes`), donde el límite está en el orden de los KB.
+
+Con el bloque `vital`, el telegrama pesa **~550–700 bytes** y no hay ningún problema técnico. La aritmética del ledger sí cambia: el cap de 5 MB pasa de ~25.000 a ~7.000 telegramas. Sigue siendo de sobra. **El límite real no es el ancho de banda; es la privacidad** — y por eso manda el criterio del bloque `vital`, no el conteo de bytes.
+
+Para minimizar bytes en el aire se podría usar **CBOR** o MessagePack en lugar de JSON, pero NO es core: JSON string alcanza y facilita el debug (se puede loguear y leer).
 
 ### Por qué cada campo
 
-- **`v=1`** — permite que un nodo v2 rechace/acepte nodos v1 sin ambigüedad.
+- **`v=2`** — permite que un nodo v2 rechace/acepte nodos v1 sin ambigüedad.
 - **`id` UUID** — es la única verdad universal. Un nodo recibe un telegrama y pregunta "¿ya tengo este id?" → decide si lo guarda o lo descarta. Sin esto, el ledger se inunda de duplicados.
 - **`user_id`** — separa la identidad de la persona del id del mensaje. Varios telegramas del mismo afectado (ej: `EMERGENCY` inicial + `NEED_HELP` después) comparten `user_id` pero tienen `id` distinto. El backend los agrupa por acá.
 - **`event_id`** — varios afectados en el mismo terremoto comparten `event_id`. Permite al backend mostrar "este desastre tiene N personas reportadas".
 - **`status`** — el estado de la **persona**, no del nodo. Es ortogonal a los 5 estados del nodo (`IDLE/ADVERTISING/SYNC/RELAY/ORPHAN`). Ver sección 4 abajo.
-- **`question_id` + `answer_hash`** — mecanismo de verificación de identidad para transicionar a `SAFE`. La pregunta (ej: "¿nombre de tu primera mascota?") está asociada al perfil pre-cargado del usuario. El `answer_hash` es el SHA-256 de la respuesta correcta. **La respuesta en claro nunca sale del teléfono.** Cuando alguien quiere confirmar que está a salvo, tipea la respuesta en la app; el backend compara el hash y, si coincide, marca `SAFE`. Si el usuario no tiene su teléfono a mano, **otro dispositivo ZIRO autorizado** (ej: el de un familiar) puede tipear la respuesta en su nombre y mandar un nuevo telegrama con `status: "SAFE"` desde su propio `origin` (mismo `user_id`). Ver `orphan-device.md`.
+- **`question_id` + `answer_hash`** (bloque `verify`) — mecanismo de verificación de identidad para transicionar a `SAFE`. La pregunta (ej: "¿nombre de tu primera mascota?") está asociada al perfil pre-cargado del usuario. El `answer_hash` es el SHA-256 de la respuesta correcta. **La respuesta en claro nunca sale del teléfono.** Cuando alguien quiere confirmar que está a salvo, tipea la respuesta en la app; el backend compara el hash y, si coincide, marca `SAFE`. Si el usuario no tiene su teléfono a mano, **otro dispositivo Replica autorizado** (ej: el de un familiar) puede tipear la respuesta en su nombre y mandar un nuevo telegrama con `status: "SAFE"` desde su propio `origin` (mismo `user_id`). Ver `orphan-device.md`.
 - **`hop` vs `ttl`** — son ortogonales. `hop` te dice **cuántos saltos hizo** (información útil para el backend: "este mensaje pasó por 4 dispositivos antes de llegar al gateway"). `ttl` te dice **cuántos saltos le quedan** antes de morir.
 - **`origin`** — para que el gateway pueda reconstruir el path A → B → C → D → Gateway en el dashboard.
 
@@ -107,7 +138,7 @@ El gateway verifica el HMAC antes de aceptar. Si el HMAC no valida → descarta 
 
 ## 3. Máquina de estados del nodo
 
-Cada nodo ZIRO tiene 5 estados. Las transiciones son **manejadas por eventos** (no por polling).
+Cada nodo Replica tiene 5 estados. Las transiciones son **manejadas por eventos** (no por polling).
 
 ```
             ┌──────────────┐
@@ -140,9 +171,9 @@ Cada nodo ZIRO tiene 5 estados. Las transiciones son **manejadas por eventos** (
 #### IDLE → ADVERTISING
 **Trigger:** trigger externo (EMSC, botón manual, schedule pre-configurado, etc.).
 **Acción:**
-- `Nearby.Connections.startAdvertising(serviceId="ziro.relay.v1", strategy=P2P_STAR)`
-- `Nearby.Connections.startDiscovery(serviceId="ziro.relay.v1")`
-- Advertise en BLE con metadata mínima `{app:"ziro", v:1, has_emergency: true}`.
+- `Nearby.Connections.startAdvertising(serviceId="replica.relay.v1", strategy=P2P_STAR)`
+- `Nearby.Connections.startDiscovery(serviceId="replica.relay.v1")`
+- Advertise en BLE con metadata mínima `{app:"replica", v:1, has_emergency: true}`.
 
 #### ADVERTISING → SYNC
 **Trigger:** se descubre un par (callback de Nearby Connections).
@@ -165,7 +196,7 @@ Cada nodo ZIRO tiene 5 estados. Las transiciones son **manejadas por eventos** (
 **Trigger:** pasaron 2 minutos sin descubrir ningún par.
 **Acción:**
 - Bajar frecuencia de advertising (ahorrar batería).
-- Mantener BLE advertising con metadata extendida `{app:"ziro", v:1, has_emergency: true, ledger_size: N, last_seen_peer: ts}`.
+- Mantener BLE advertising con metadata extendida `{app:"replica", v:1, has_emergency: true, ledger_size: N, last_seen_peer: ts}`.
 - Cada 60s, broadcast de beacon.
 - Si entra un par, transición a SYNC.
 
@@ -200,7 +231,7 @@ NEED_HELP  ──safe answer──▶  SAFE
 ### Quién puede emitir cada transición
 
 - **Origen** (el propio teléfono del afectado): puede pasar de `EMERGENCY` a `NEED_HELP` o a `SAFE` (con respuesta correcta).
-- **Dispositivo ZIRO autorizado** (familiar con ZIRO instalado y vinculado al `user_id`): puede pasar a `SAFE` en nombre del afectado. Esto cubre el caso "el teléfono quedó tirado". Ver `orphan-device.md`.
+- **Dispositivo Replica autorizado** (familiar con Replica instalado y vinculado al `user_id`): puede pasar a `SAFE` en nombre del afectado. Esto cubre el caso "el teléfono quedó tirado". Ver `orphan-device.md`.
 - **Backend**: nunca emite transiciones por sí solo — solo refleja lo que recibe y notifica a la familia.
 
 ### Modelo en el backend

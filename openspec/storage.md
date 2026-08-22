@@ -2,13 +2,13 @@
 
 ## Concepto
 
-El **telegrama** transporta metadata (~120 bytes). El **video/audio** del evento se maneja por separado, con un patrón diferente. Aquí definimos los patrones posibles y cuál elegimos para ZIRO.
+El **telegrama** transporta metadata (~120 bytes). El **video/audio** del evento se maneja por separado, con un patrón diferente. Aquí definimos los patrones posibles y cuál elegimos para Replica.
 
 ## Tres patrones posibles
 
 ### Patrón A — Solo telegrama, evidencia queda en el origen
 
-- La app del origen sigue grabando localmente (MP4 en `/sdcard/ziro/evidence/{id}/video.mp4`).
+- La app del origen sigue grabando localmente (MP4 en `/sdcard/replica/evidence/{id}/video.mp4`).
 - El telegrama salta por los nodos.
 - Cuando el origen recupera Internet, hace upload del video al backend.
 - Los relays **nunca reciben el video**.
@@ -167,7 +167,7 @@ async def upload_evidence(
 ## Storage local en el origen
 
 ```
-/storage/emulated/0/Android/data/com.ziro.emergency/files/
+/storage/emulated/0/Android/data/com.replica.emergency/files/
 └── evidence/
     ├── a8f29c3f-7b9e-4a1d-8e2f-1c5b9d6e3f4a/
     │   ├── video.mp4        ← evidencia (500 kbps, 480p, 15fps)
@@ -193,7 +193,7 @@ Para que el video no sea enorme:
 
 ```
 ┌─────────────────────────────────┐
-│      ZIRO EMERGENCY             │
+│      Replica EMERGENCY             │
 ├─────────────────────────────────┤
 │                                 │
 │  👤 Juan Pérez                  │

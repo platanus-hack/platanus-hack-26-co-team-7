@@ -1,5 +1,7 @@
 # api.md — Endpoints backend mínimos
 
+> ⚠️ **Desactualizado en parte:** el schema del telegrama y el modelo SQL de abajo son de la v1 del protocolo. El telegrama vigente es **v2** (bloques `vital`/`verify`, sin `family_contact`) — ver `protocol.md` sección 1 y la sección "Protocolo v2" en `DECISIONS.md`. La semántica de endpoints y del Emergency Orchestrator sigue válida; el stack definitivo es FastAPI + PostgreSQL (`architecture.md`).
+
 ## Stack
 
 - **Node.js + Express** o **Python + FastAPI** — cualquiera sirve para 36h, lo que el equipo domine.

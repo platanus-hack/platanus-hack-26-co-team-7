@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Dashboard web público (Vite + React + TS, desplegado como sitio estático): mapa de calor H3 en tiempo real y feed de reportes IA sobre el evento abierto más reciente. Es la cara visual de ZIRO para rescatistas, prensa y jueces. Solo renderiza: todo el cálculo vive server-side.
+Dashboard web público (Vite + React + TS, desplegado como sitio estático): mapa de calor H3 en tiempo real y feed de reportes IA sobre el evento abierto más reciente. Es la cara visual de Replica para rescatistas, prensa y jueces. Solo renderiza: todo el cálculo vive server-side.
 
 ## Requirements
 

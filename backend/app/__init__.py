@@ -1,1 +1,1 @@
-"""ZIRO backend application package (models layer)."""
+"""Replica backend application package (models layer)."""

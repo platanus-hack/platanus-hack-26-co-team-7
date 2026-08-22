@@ -16,7 +16,7 @@ from app.config import settings
 
 
 class Base(DeclarativeBase):
-    """SQLAlchemy 2.0 declarative base for all ZIRO models."""
+    """SQLAlchemy 2.0 declarative base for all Replica models."""
 
 
 engine = create_engine(settings.database_url, pool_pre_ping=True)

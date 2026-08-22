@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Superficie pública de solo lectura del mundo online de ZIRO: endpoints HTTP GET y un WebSocket de broadcast anónimo que exponen celdas H3 agregadas y reportes IA del evento abierto más reciente. Es la única fuente de datos del dashboard web. Invariante de privacidad (architecture.md): coordenadas crudas e identificadores (`sid`) jamás salen por aquí.
+Superficie pública de solo lectura del mundo online de Replica: endpoints HTTP GET y un WebSocket de broadcast anónimo que exponen celdas H3 agregadas y reportes IA del evento abierto más reciente. Es la única fuente de datos del dashboard web. Invariante de privacidad (architecture.md): coordenadas crudas e identificadores (`sid`) jamás salen por aquí.
 
 > Decisión documentada (comportamiento sin evento): si se recibe un `event_id` explícito que no existe, la respuesta es **404** con cuerpo de error tipado; si NO se recibe `event_id` y no existe evento abierto, la respuesta es **200 con colección vacía**, para que el dashboard arranque en estado vacío sin errores.
 

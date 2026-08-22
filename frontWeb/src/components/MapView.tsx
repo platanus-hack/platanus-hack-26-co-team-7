@@ -47,7 +47,7 @@ export default function MapView({ cells }: MapViewProps) {
   const layer = useMemo(
     () =>
       new H3HexagonLayer<HeatmapCell>({
-        id: "ziro-heatmap",
+        id: "replica-heatmap",
         data: cells,
         getHexagon: (d: HeatmapCell) => d.h3_index,
         getFillColor: (d: HeatmapCell) => intensityColor(d.intensity),

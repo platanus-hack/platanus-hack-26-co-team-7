@@ -1,10 +1,10 @@
-# Proposal: Dashboard web público ZIRO (heatmap H3 + reportes IA + realtime)
+# Proposal: Dashboard web público Replica (heatmap H3 + reportes IA + realtime)
 
 > Nota sobre DECISIONS.md: ninguna idea aquí fue rechazada. La decisión del 2026-08-22 ("dashboard web = post-hackathon") queda **superada** por esta propuesta: se adelanta el dashboard público al MVP para la demo ante jueces.
 
 ## Intención
 
-Hoy el mundo online de ZIRO no existe: solo hay modelos SQLAlchemy (`backend/app/models/`). Sin dashboard, todo lo que la red mesh produce (celdas H3 agregadas, reportes) es invisible para rescatistas, prensa y **jueces**: la sección "para qué sirve" del pitch no tiene cara visual. Este change crea la primera superficie pública: mapa de calor en tiempo real + feed de reportes IA sobre el evento abierto más reciente.
+Hoy el mundo online de Replica no existe: solo hay modelos SQLAlchemy (`backend/app/models/`). Sin dashboard, todo lo que la red mesh produce (celdas H3 agregadas, reportes) es invisible para rescatistas, prensa y **jueces**: la sección "para qué sirve" del pitch no tiene cara visual. Este change crea la primera superficie pública: mapa de calor en tiempo real + feed de reportes IA sobre el evento abierto más reciente.
 
 ## Alcance
 

@@ -1,4 +1,4 @@
-# ZIRO
+# Replica
 
 **Red de comunicación de emergencia que sigue funcionando cuando la infraestructura colapsa.**
 
@@ -16,7 +16,7 @@ Es el peor momento posible para quedarse sin red, y es exactamente cuando la red
 
 ## La solución
 
-ZIRO convierte los teléfonos Android en una red temporal que sobrevive a la caída de la infraestructura. No necesita Internet ni torres celulares.
+Replica convierte los teléfonos Android en una red temporal que sobrevive a la caída de la infraestructura. No necesita Internet ni torres celulares.
 
 1. **Recopila** evidencia local en el teléfono del afectado: video, audio, GPS, timestamp e identificador anónimo.
 2. **Transporta** un telegrama de ~120 bytes que resume la emergencia, saltando de teléfono en teléfono vía Wi-Fi Direct / BLE.
@@ -26,7 +26,7 @@ Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la ca
 
 ## La plataforma web
 
-ZIRO son dos productos que trabajan como uno:
+Replica son dos productos que trabajan como uno:
 
 - **El móvil** pelea por mantener viva la información mientras no hay red.
 - **La web** convierte esa información en algo público y accionable en cuanto llega al servidor.
@@ -53,7 +53,7 @@ No es mesh routing IP ni una app de mensajería más. Es **store-and-forward + g
 | **Zello** | Server-mediated: si cae la red, cae Zello |
 | **ShakeAlert / Google EEW** | Push unidireccional, no transporta evidencia |
 
-ZIRO combina las cuatro cosas en un solo producto: registro distribuido, gossip entre pares, auto-supervivencia del dispositivo de origen, un caso de uso real para rescatistas sin Internet y una plataforma pública que transforma los telegramas en mapa de calor y reportes de situación generados con IA.
+Replica combina las cuatro cosas en un solo producto: registro distribuido, gossip entre pares, auto-supervivencia del dispositivo de origen, un caso de uso real para rescatistas sin Internet y una plataforma pública que transforma los telegramas en mapa de calor y reportes de situación generados con IA.
 
 ## Decisiones técnicas
 
@@ -62,7 +62,7 @@ ZIRO combina las cuatro cosas en un solo producto: registro distribuido, gossip 
 - **Seguridad:** firma HMAC-SHA256 por dispositivo, para cerrar el vector de MITM.
 - **Ledger local:** ventana de 24 horas, tope de 5 MB con LRU, TTL de 8 saltos.
 - **Auto-supervivencia:** si el usuario abandona el teléfono, este ya repartió los primeros segundos de video entre los nodos cercanos y sigue emitiendo un beacon cada 60 segundos.
-- **Trigger externo:** usamos EMSC o un botón manual. ZIRO no reinventa la detección de sismos.
+- **Trigger externo:** usamos EMSC o un botón manual. Replica no reinventa la detección de sismos.
 
 ## El resultado
 

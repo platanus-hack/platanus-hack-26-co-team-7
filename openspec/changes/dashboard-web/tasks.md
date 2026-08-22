@@ -1,4 +1,4 @@
-# Tasks: Dashboard web público ZIRO (heatmap H3 + reportes IA + realtime)
+# Tasks: Dashboard web público Replica (heatmap H3 + reportes IA + realtime)
 
 ## Review Workload Forecast
 

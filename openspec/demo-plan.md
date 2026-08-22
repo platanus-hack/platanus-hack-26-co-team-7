@@ -2,7 +2,7 @@
 
 ## Setup (5 minutos antes)
 
-- 5 teléfonos en una mesa, todos con ZIRO instalado y configurado.
+- 5 teléfonos en una mesa, todos con Replica instalado y configurado.
 - Backend corriendo en laptop con dashboard abierto en pantalla grande.
 - Teléfono A es **el del afectado** (Juan, severidad 3).
 - Teléfonos B, C son **relays** (peatones caminando).
@@ -26,7 +26,7 @@ Tener screenshot/videos de respaldo por si algo falla.
 
 ### 0:15 — Activación (15 segundos)
 
-> "Juan activa ZIRO en Emergency Mode."
+> "Juan activa Replica en Emergency Mode."
 
 [Teléfono A: UI muestra Emergency Mode activo. Empieza a grabar.]
 
@@ -70,7 +70,7 @@ Tener screenshot/videos de respaldo por si algo falla.
 
 [F abre la app → ve: "4 personas reportadas en la zona, severidad 2-4. La más cercana: 200m al norte."]
 
-> "Y aquí está la parte que cambia todo: un rescatista llega a la zona. Su teléfono tiene ZIRO pero no tiene Internet. Apenas entra al rango de cualquier ZIRO cercano — en este caso B — recibe automáticamente la lista de personas reportadas en la zona. No necesita Internet. La información ya está distribuida en los teléfonos de la gente alrededor."
+> "Y aquí está la parte que cambia todo: un rescatista llega a la zona. Su teléfono tiene Replica pero no tiene Internet. Apenas entra al rango de cualquier Replica cercano — en este caso B — recibe automáticamente la lista de personas reportadas en la zona. No necesita Internet. La información ya está distribuida en los teléfonos de la gente alrededor."
 
 ---
 
@@ -92,11 +92,11 @@ Tener screenshot/videos de respaldo por si algo falla.
 
 [Mostrar la cadena: A → B → C → D → Backend → Dashboard.]
 
-> "ZIRO convierte los teléfonos en una red temporal que se comunica sin Internet. La información viaja de bolsillo en bolsillo hasta encontrar una salida. Cuando la red colapsa, no perdemos a las personas — la información sigue llegando."
+> "Replica convierte los teléfonos en una red temporal que se comunica sin Internet. La información viaja de bolsillo en bolsillo hasta encontrar una salida. Cuando la red colapsa, no perdemos a las personas — la información sigue llegando."
 
 [Silencio. Pausa.]
 
-> "Eso es ZIRO."
+> "Eso es Replica."
 
 ---
 

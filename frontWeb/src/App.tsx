@@ -61,7 +61,7 @@ export default function App() {
     <div className="flex h-screen flex-col bg-slate-900 text-slate-100">
       <header className="flex items-center justify-between border-b border-slate-700 bg-slate-950 px-4 py-3">
         <h1 className="text-lg font-bold tracking-tight sm:text-xl">
-          ZIRO — Estado del desastre
+          Replica — Estado del desastre
         </h1>
         <div className="flex items-center gap-2 text-xs sm:text-sm">
           {mode === "loading" && (

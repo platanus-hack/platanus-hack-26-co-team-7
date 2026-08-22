@@ -1,4 +1,4 @@
-# ZIRO — Dashboard web público
+# Replica — Dashboard web público
 
 Dashboard de estado del desastre: mapa de calor H3 en tiempo real + feed de reportes IA.
 Vite + React + TypeScript, estilizado 100 % con **Tailwind CSS v4** (sin CSS propio).

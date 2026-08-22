@@ -41,7 +41,7 @@ def _require_database_url() -> str:
     if not raw or not raw.strip():
         raise RuntimeError(
             "DATABASE_URL is not set. Create backend/.env from backend/.env.example "
-            "and set e.g. DATABASE_URL=postgresql+psycopg://ziro:ziro@localhost:5432/ziro"
+            "and set e.g. DATABASE_URL=postgresql+psycopg://replica:replica@localhost:5432/replica"
         )
     url = raw.strip()
     # Runtime only supports PostgreSQL (psycopg driver). The "+psycopg" driver

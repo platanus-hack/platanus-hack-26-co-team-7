@@ -1,4 +1,4 @@
-# Design: Dashboard web público ZIRO
+# Design: Dashboard web público Replica
 
 ## Enfoque técnico
 

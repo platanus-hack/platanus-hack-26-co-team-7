@@ -1,7 +1,7 @@
 [project]
-name = "ziro-backend"
+name = "replica-backend"
 version = "0.1.0"
-description = "ZIRO emergency communication network - FastAPI backend (models layer)"
+description = "Replica emergency communication network - FastAPI backend (models layer)"
 requires-python = ">=3.11"
 dependencies = [
     "sqlalchemy>=2.0",

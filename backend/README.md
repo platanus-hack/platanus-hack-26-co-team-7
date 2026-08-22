@@ -1,6 +1,6 @@
-# ZIRO Backend — Models layer
+# Replica Backend — Models layer
 
-SQLAlchemy 2.0 models for the ZIRO emergency communication network backend.
+SQLAlchemy 2.0 models for the Replica emergency communication network backend.
 This package currently contains **only** the database schema (config + Base + models).
 No FastAPI app, endpoints, orchestrator, or Alembic migrations yet.
 
@@ -20,13 +20,13 @@ The connection string comes from the `DATABASE_URL` environment variable.
 Default (local dev):
 
 ```
-postgresql+psycopg://ziro:ziro@localhost:5432/ziro
+postgresql+psycopg://replica:replica@localhost:5432/replica
 ```
 
 PowerShell example:
 
 ```powershell
-$env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/ziro"
+$env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/replica"
 ```
 
 ## Create tables

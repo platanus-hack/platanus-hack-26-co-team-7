@@ -1,4 +1,4 @@
-"""FastAPI application factory for the ZIRO backend.
+"""FastAPI application factory for the Replica backend.
 
 Single-process app (openspec/architecture.md, Componente 2): ingestion,
 trigger engine, H3 aggregation, AI reports and this readonly public API are
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="ZIRO Backend",
+        title="Replica Backend",
         description="Emergency communication network - public read-only API",
         version="0.1.0",
         lifespan=lifespan,
