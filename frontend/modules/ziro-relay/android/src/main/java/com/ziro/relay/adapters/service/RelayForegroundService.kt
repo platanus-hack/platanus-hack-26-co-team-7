@@ -62,11 +62,18 @@ class RelayForegroundService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setContentTitle("ZIRO relay active")
-            .setContentText("Discovering nearby emergency relays")
+            .setContentText("Sharing your emergency card with nearby phones")
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            // Must match the manifest exactly. Declaring `location` there but omitting it
+            // here silently strips the service's right to read position in the background,
+            // and the heartbeat then repeats the same stale coordinates forever.
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+            )
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }

@@ -6,90 +6,180 @@ Last updated: 2026-08-22
 
 ## Sources scanned
 
-- /home/guayaba/.pi/agent/skills
-- /home/guayaba/.agents/skills
-- /home/guayaba/.config/opencode/skills
-- /home/guayaba/.claude/skills
-- /home/guayaba/.gemini/skills
-- /home/guayaba/.gemini/antigravity/skills
-- /home/guayaba/.gemini/antigravity-cli/skills
-- /home/guayaba/.cursor/skills
-- /home/guayaba/.copilot/skills
-- /home/guayaba/.codex/skills
-- /home/guayaba/.codeium/windsurf/skills
-- /home/guayaba/.qwen/skills
-- /home/guayaba/.kiro/skills
-- /home/guayaba/.openclaw/skills
-- /home/guayaba/.hermes/skills
+- C:\Users\javia\.config\agents\skills
+- C:\Users\javia\.agents\skills
+- C:\Users\javia\.config\opencode\skills
+- C:\Users\javia\.claude\skills
+- C:\Users\javia\.gemini\skills
+- C:\Users\javia\.gemini\antigravity\skills
+- C:\Users\javia\.cursor\skills
+- C:\Users\javia\.copilot\skills
+- C:\Users\javia\.codex\skills
+- C:\Users\javia\.qwen\skills
 
 ## Contract
 
-**Delegator use only.** This registry is an index, not a summary. Any agent that launches subagents reads it to select relevant skills, then passes exact `SKILL.md` paths for the subagent to read before work.
+**Delegator use only.** Any agent that launches subagents reads this registry to resolve compact rules, then injects matching rule text into subagent prompts under `## Project Standards (auto-resolved)`.
 
-`SKILL.md` remains the source of truth. Do not inject generated summaries or compact rules by default; pass paths so subagents load the full runtime contract and preserve author intent.
+Subagents still read their assigned executor/phase skill. During normal runtime, they do **not** independently discover or load additional project/user `SKILL.md` files or this registry; project/user rules arrive pre-digested. Explicit fallback loading is degraded self-healing and must be reported in `skill_resolution` as `fallback-registry` or `fallback-path`.
 
-## Skills
+## Selected skills and compact rules
 
-| Skill | Trigger / description | Scope | Path |
-| --- | --- | --- | --- |
-| `agents-sdk` | Build AI agents on Cloudflare Workers using the Agents SDK. Load when creating stateful agents, durable workflows, real-time WebSocket apps, scheduled tasks, MCP servers, chat applications, voice agents, or browser automation. Covers Agent class, state management, callable RPC, Workflows, durable execution, queues, retries, observability, and React hooks. Biases towards retrieval from Cloudflare docs over pre-trained knowledge. | user | `/home/guayaba/.pi/agent/skills/agents-sdk/SKILL.md` |
-| `ai-sdk-5` | Vercel AI SDK 5 patterns. Trigger: When building AI chat features - breaking changes from v4. | user | `/home/guayaba/.config/opencode/skills/ai-sdk-5/SKILL.md` |
-| `applying-code-review-feedback` | Use when you receive a code review (from a bot, a teammate, or a senior engineer) and need to apply some or all of its findings to your own open PR. Covers mixed per-point instructions ('fix X, ignore Y'), out-of-scope flags, decision vs documentation, and the common agent failure of over-processing simple fixes. | user | `/home/guayaba/.hermes/skills/applying-code-review-feedback/SKILL.md` |
-| `branch-pr` | Create Gentle AI pull requests with issue-first checks. Trigger: creating, opening, or preparing PRs for review. | user | `/home/guayaba/.agents/skills/branch-pr/SKILL.md` |
-| `caveman` | Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman while keeping full technical accuracy. Supports intensity levels: lite, full (default), ultra, wenyan-lite, wenyan-full, wenyan-ultra. Use when user says "caveman mode", "talk like caveman", "use caveman", "less tokens", "be brief", or invokes /caveman. Also auto-triggers when token efficiency is requested. | user | `/home/guayaba/.agents/skills/caveman/SKILL.md` |
-| `caveman-commit` | Ultra-compressed commit message generator. Cuts noise from commit messages while preserving intent and reasoning. Conventional Commits format. Subject ≤50 chars, body only when "why" isn't obvious. Use when user says "write a commit", "commit message", "generate commit", "/commit", or invokes /caveman-commit. Auto-triggers when staging changes. | user | `/home/guayaba/.agents/skills/caveman-commit/SKILL.md` |
-| `caveman-compress` | Compress natural language memory files (CLAUDE.md, todos, preferences) into caveman format to save input tokens. Preserves all technical substance, code, URLs, and structure. Compressed version overwrites the original file. Human-readable backup saved as FILE.original.md. Trigger: /caveman:compress <filepath> or "compress memory file" | user | `/home/guayaba/.agents/skills/caveman-compress/SKILL.md` |
-| `caveman-help` | Quick-reference card for all caveman modes, skills, and commands. One-shot display, not a persistent mode. Trigger: /caveman-help, "caveman help", "what caveman commands", "how do I use caveman". | user | `/home/guayaba/.agents/skills/caveman-help/SKILL.md` |
-| `caveman-review` | Ultra-compressed code review comments. Cuts noise from PR feedback while preserving the actionable signal. Each comment is one line: location, problem, fix. Use when user says "review this PR", "code review", "review the diff", "/review", or invokes /caveman-review. Auto-triggers when reviewing pull requests. | user | `/home/guayaba/.agents/skills/caveman-review/SKILL.md` |
-| `chained-pr` | Trigger: PRs over 400 lines, stacked PRs, review slices. Split oversized changes into chained PRs that protect review focus. | user | `/home/guayaba/.agents/skills/chained-pr/SKILL.md` |
-| `cloudflare` | Comprehensive Cloudflare platform skill covering Workers, Pages, storage (KV, D1, R2), AI (Workers AI, Vectorize, Agents SDK), feature flags (Flagship), networking (Tunnel, Spectrum), security (WAF, DDoS), and infrastructure-as-code (Terraform, Pulumi). Use for any Cloudflare development task. Biases towards retrieval from Cloudflare docs over pre-trained knowledge. | user | `/home/guayaba/.pi/agent/skills/cloudflare/SKILL.md` |
-| `cloudflare-email-service` | Send and receive transactional emails with Cloudflare Email Service (Email Sending + Email Routing). Use when building email sending (Workers binding or REST API), email routing, Agents SDK email handling, or integrating email into any app — Workers, Node.js, Python, Go, etc. Also use for email deliverability, SPF/DKIM/DMARC, wrangler email setup, MCP email tools, or when a coding agent needs to send emails. Even for simple requests like "add email to my Worker" — this skill has critical config details. | user | `/home/guayaba/.pi/agent/skills/cloudflare-email-service/SKILL.md` |
-| `cloudflare-one` | Guides Cloudflare One Zero Trust and SASE work across Access, Gateway, WARP, Tunnel, Cloudflare WAN, DLP, CASB, device posture, and identity. Use when designing, configuring, troubleshooting, or reviewing Cloudflare One deployments. Retrieval-first: use current Cloudflare docs/API schemas instead of embedded product docs. | user | `/home/guayaba/.pi/agent/skills/cloudflare-one/SKILL.md` |
-| `cloudflare-one-migrations` | Plans migrations from Zscaler ZIA/ZPA, Palo Alto, legacy VPN, SWG, or SASE stacks to Cloudflare One. Use for migration assessments, policy mapping, rollout plans, and parity/gap analysis. | user | `/home/guayaba/.pi/agent/skills/cloudflare-one-migrations/SKILL.md` |
-| `code-philosophy` | Internal logic and data flow philosophy (The 5 Laws of Elegant Defense). Understand deeply to ensure code guides data naturally and prevents errors. | user | `/home/guayaba/.config/opencode/skills/code-philosophy/SKILL.md` |
-| `code-review` | Comprehensive code review methodology with severity classification and confidence thresholds | user | `/home/guayaba/.config/opencode/skills/code-review/SKILL.md` |
-| `cognitive-doc-design` | Design docs that reduce cognitive load. Trigger: writing guides, READMEs, RFCs, onboarding, architecture, or review-facing docs. | user | `/home/guayaba/.agents/skills/cognitive-doc-design/SKILL.md` |
-| `comment-writer` | Write warm, direct collaboration comments. Trigger: PR feedback, issue replies, reviews, Slack messages, or GitHub comments. | user | `/home/guayaba/.agents/skills/comment-writer/SKILL.md` |
-| `durable-objects` | Create and review Cloudflare Durable Objects. Use when building stateful coordination (chat rooms, multiplayer games, booking systems), implementing RPC methods, SQLite storage, alarms, WebSockets, or reviewing DO code for best practices. Covers Workers integration, wrangler config, and testing with Vitest. Biases towards retrieval from Cloudflare docs over pre-trained knowledge. | user | `/home/guayaba/.pi/agent/skills/durable-objects/SKILL.md` |
-| `eww-mis-dotfiles` | Edit Juan's EWW bar config in MIS-DOTFILES without breaking styles. Load when adding/modifying widgets, popups, or any UI element in ~/TOOLS/MIS-DOTFILES/wm/eww/. Covers the root/current/ dual-dir trap, EWW's restricted CSS subset, sassc-based validation, and the defwidget/defwindow/revealer overlay pattern used by wifi/cal/menu/now-playing popups. | user | `/home/guayaba/.hermes/skills/eww-mis-dotfiles/SKILL.md` |
-| `find-skills` | Helps users discover and install agent skills when they ask questions like "how do I do X", "find a skill for X", "is there a skill that can...", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill. | user | `/home/guayaba/.agents/skills/find-skills/SKILL.md` |
-| `frontend-design` | Create distinctive, production-grade frontend interfaces with high design quality. Trigger: When the user asks to build web components, pages, artifacts, posters, or applications, or to style/beautify any web UI. | user | `/home/guayaba/.config/opencode/skills/frontend-design/SKILL.md` |
-| `frontend-philosophy` | Visual & UI philosophy (The 5 Pillars of Intentional UI). Understand deeply to avoid "AI slop" and create distinctive, memorable interfaces. | user | `/home/guayaba/.config/opencode/skills/frontend-philosophy/SKILL.md` |
-| `gentle-ai-bench` | Trigger: bench, journey, journeys, driven mode, gentle-ai-bench, journey corpus, j-numbers, bench axis. Author and verify gentle-ai bench journeys; go test ./bench never proves driven execution. | user | `/home/guayaba/.agents/skills/gentle-ai-bench/SKILL.md` |
-| `gentle-ai-install-failures` | Diagnose and fix gentle-ai install pipeline failures when the workspace (typically ~/.config/opencode/ or ~/.config/Hermes/) is symlinked to a versioned dotfiles repo (typically ~/TOOLS/MIS-DOTFILES/). Trigger when the user pastes a gentle-ai install or update output showing FAILED component lines, or mentions symlink refusal errors. Covers the anti-symlink parent-dir guard, truncating path output, and the three resolution paths (write to repo, replace symlinks, skip guard). | user | `/home/guayaba/.hermes/skills/gentle-ai-install-failures/SKILL.md` |
-| `go-testing` | Trigger: Go tests, go test coverage, Bubbletea teatest, golden files. Apply focused Go testing patterns. | user | `/home/guayaba/.agents/skills/go-testing/SKILL.md` |
-| `hallmark` | Anti-AI-slop design skill for greenfield pages, audits, redesigns, and design extraction from URLs or screenshots. Use when the user asks to build a new app or landing page, wants to redesign something, invokes Hallmark by name, or uses audit/redesign/study. | user | `/home/guayaba/.agents/skills/hallmark/SKILL.md` |
-| `hermes-desktop-plugins` | Write desktop app plugins that add UI panes and commands. | user | `/home/guayaba/.hermes/skills/hermes-desktop-plugins/SKILL.md` |
-| `hermes-multi-profile-config` | Propagate capabilities (MCP servers, skills dirs, plugin configs) between Hermes profiles WITHOUT touching each profile's SOUL.md or personality. Trigger when the user asks to add "X a todos los perfiles", "propagar gentle-ai a otros perfiles", "sync configs entre perfiles", or after `gentle-ai install --agents X` populated one profile and they want the same capabilities in the others. Covers the multi-profile config pattern, token resolution for MCP headers, and the hard rule of preserving per-profile SOUL.md. | user | `/home/guayaba/.hermes/skills/hermes-multi-profile-config/SKILL.md` |
-| `hermes-themes` | Author a Hermes color theme that skins every surface. | user | `/home/guayaba/.hermes/skills/hermes-themes/SKILL.md` |
-| `issue-creation` | Create and triage GitHub issues from repository evidence. Trigger: issue creation, bug reports, feature requests, or issue approval. | user | `/home/guayaba/.agents/skills/issue-creation/SKILL.md` |
-| `judgment-day` | Trigger: judgment day, dual review, adversarial review, juzgar. Run explicit blind dual review with at most two scoped fix/re-judgment rounds. | user | `/home/guayaba/.agents/skills/judgment-day/SKILL.md` |
-| `nextjs-15` | Next.js 15 App Router patterns. Trigger: When working with Next.js - routing, Server Actions, data fetching. | user | `/home/guayaba/.config/opencode/skills/nextjs-15/SKILL.md` |
-| `plan-protocol` | Guidelines for creating and managing implementation plans with citations | user | `/home/guayaba/.config/opencode/skills/plan-protocol/SKILL.md` |
-| `plan-review` | Criteria for reviewing implementation plans against quality standards | user | `/home/guayaba/.config/opencode/skills/plan-review/SKILL.md` |
-| `pr-review` | Reviews GitHub PRs and leaves human, direct comments. Trigger: When user asks to review a PR, check a PR, or gives a PR URL. | user | `/home/guayaba/.config/opencode/skills/pr-review/SKILL.md` |
-| `pr-scope-discipline` | Audit feature-branch diffs before pushing/opening a PR so the PR contains only the feature's intended changes. Handles inherited-base-commit contamination, 'only this file' user constraints, and incidental .gitignore/package.json/index.css edits. | user | `/home/guayaba/.hermes/skills/pr-scope-discipline/SKILL.md` |
-| `rdd-defect-workflow` | Trigger: RDD, receipt-driven development, review authority, receipt/lineage, correction/recovery, delivery gate/kill switch, bounded review defects. Guide work. | user | `/home/guayaba/.agents/skills/rdd-defect-workflow/SKILL.md` |
-| `react-19` | React 19 patterns with React Compiler. Trigger: When writing React components - no useMemo/useCallback needed. | user | `/home/guayaba/.config/opencode/skills/react-19/SKILL.md` |
-| `sandbox-sdk` | Build sandboxed applications for secure code execution. Load when building AI code execution, code interpreters, CI/CD systems, interactive dev environments, or executing untrusted code. Covers Sandbox SDK lifecycle, commands, files, code interpreter, and preview URLs. Biases towards retrieval from Cloudflare docs over pre-trained knowledge. | user | `/home/guayaba/.pi/agent/skills/sandbox-sdk/SKILL.md` |
-| `skill-creator` | Trigger: new skills, agent instructions, documenting AI usage patterns. Create LLM-first skills with valid frontmatter. | user | `/home/guayaba/.agents/skills/skill-creator/SKILL.md` |
-| `skill-improver` | Trigger: improve skills, audit skills, refactor skills, skill quality. Audit and upgrade existing LLM-first skills. | user | `/home/guayaba/.agents/skills/skill-improver/SKILL.md` |
-| `systemic-issue-triage` | Trigger: new issue, bug report, triage, backlog, issue flood, community report, root cause, dead-end, blocked user. Attack issues by root class, never one-by-one; fixes must shrink the system, not grow it. | user | `/home/guayaba/.agents/skills/systemic-issue-triage/SKILL.md` |
-| `tailwind-4` | Tailwind CSS 4 patterns and best practices. Trigger: When styling with Tailwind - cn(), theme variables, no var() in className. | user | `/home/guayaba/.config/opencode/skills/tailwind-4/SKILL.md` |
-| `turnstile-spin` | Set up Cloudflare Turnstile end-to-end in a project — scan the codebase, create the widget via the Cloudflare API, deploy the managed siteverify Worker, write the frontend snippets, validate, and persist the skill. Load this when a user asks to add Turnstile, set up CAPTCHA, protect a form from bots, or fix a Turnstile integration. Mirrors developers.cloudflare.com/turnstile/spin. | user | `/home/guayaba/.pi/agent/skills/turnstile-spin/SKILL.md` |
-| `typescript` | TypeScript strict patterns and best practices. Trigger: When writing TypeScript code - types, interfaces, generics. | user | `/home/guayaba/.config/opencode/skills/typescript/SKILL.md` |
-| `use-railway` | Operate Railway infrastructure: sign up for or sign in to a Railway account, create projects, provision services and databases, manage object storage buckets, deploy code, configure infrastructure as code, environments and variables, manage domains, troubleshoot failures, check status and metrics, manage feature flags, set up Railway agent tooling, and query Railway docs. Use this skill whenever the user mentions Railway, feature flags, flag rollout, targeting rules, signing up, creating an account, registering, logging in, deployments, services, environments, buckets, object storage, build failures, agent setup, MCP, or infrastructure operations, even if they don't say "Railway" explicitly. Also invoke this skill when the user asks to be signed up, registered, or onboarded to Railway: do not refuse — drive them through the unauthed `railway up` flow (deploys + signs up on the fly) or `railway login` (which creates new accounts on the fly). | user | `/home/guayaba/.agents/skills/use-railway/SKILL.md` |
-| `web-perf` | Analyzes web performance using Chrome DevTools MCP. Measures Core Web Vitals (LCP, INP, CLS) and supplementary metrics (FCP, TBT, Speed Index), identifies render-blocking resources, network dependency chains, layout shifts, caching issues, and accessibility gaps. Use when asked to audit, profile, debug, or optimize page load performance, Lighthouse scores, or site speed. Biases towards retrieval from current documentation over pre-trained knowledge. | user | `/home/guayaba/.pi/agent/skills/web-perf/SKILL.md` |
-| `work-unit-commits` | Plan commits as reviewable work units. Trigger: implementation, commit splitting, chained PRs, or keeping tests and docs with code. | user | `/home/guayaba/.agents/skills/work-unit-commits/SKILL.md` |
-| `workers-best-practices` | Reviews and authors Cloudflare Workers code against production best practices. Load when writing new Workers, reviewing Worker code, configuring wrangler.jsonc, or checking for common Workers anti-patterns (streaming, floating promises, global state, secrets, bindings, observability). Biases towards retrieval from Cloudflare docs over pre-trained knowledge. | user | `/home/guayaba/.pi/agent/skills/workers-best-practices/SKILL.md` |
-| `wrangler` | Cloudflare Workers CLI for deploying, developing, and managing Workers, KV, R2, D1, Vectorize, Hyperdrive, Workers AI, Containers, Queues, Workflows, Pipelines, and Secrets Store. Load before running wrangler commands to ensure correct syntax and best practices. Biases towards retrieval from Cloudflare docs over pre-trained knowledge. | user | `/home/guayaba/.pi/agent/skills/wrangler/SKILL.md` |
-| `yuanbao` | Yuanbao (元宝) groups: @mention users, query info/members. | user | `/home/guayaba/.hermes/skills/yuanbao/SKILL.md` |
-| `zod-4` | Zod 4 schema validation patterns. Trigger: When using Zod for validation - breaking changes from v3. | user | `/home/guayaba/.config/opencode/skills/zod-4/SKILL.md` |
-| `zustand-5` | Zustand 5 state management patterns. Trigger: When managing React state with Zustand. | user | `/home/guayaba/.config/opencode/skills/zustand-5/SKILL.md` |
+### branch-pr
+- Path: C:\Users\javia\.config\opencode\skills\branch-pr\SKILL.md
+- Trigger: Create Gentle AI pull requests with issue-first checks. Trigger: creating, opening, or preparing PRs for review.
+- Rules:
+  - **Every PR MUST link an approved issue** — no exceptions
+  - **Every PR MUST have exactly one `type:*` label**
+  - **Automated checks must pass** before merge is possible
+  - **Blank PRs without issue linkage will be blocked** by GitHub Actions
 
-## Loading protocol
+### caveman-compress
+- Path: C:\Users\javia\.agents\skills\caveman-compress\SKILL.md
+- Rules:
+  - No compact rules declared; delegators should load the full skill file before direct work, or pass an explicit fallback path only when Project Standards cannot be injected.
 
-1. Match task context and target files against the `Trigger / description` column.
-2. Pass only the matching `Path` values to the subagent under `## Skills to load before work`.
-3. Instruct the subagent to read those exact `SKILL.md` files before reading, writing, reviewing, testing, or creating artifacts.
-4. If no matching skill exists, proceed without project skill injection and report `skill_resolution: none`.
+### chained-pr
+- Path: C:\Users\javia\.config\opencode\skills\chained-pr\SKILL.md
+- Trigger: Trigger: PRs over 400 lines, stacked PRs, review slices. Split oversized changes into chained PRs that protect review focus.
+- Rules:
+  - Split PRs over **400 changed lines** unless a maintainer explicitly accepts `size:exception`.
+  - Keep each PR reviewable in about **≤60 minutes**.
+  - Use one deliverable work unit per PR; keep tests/docs with the unit they verify.
+  - State start, end, prior dependencies, follow-up work, and out-of-scope items in every chained PR.
+  - Every child PR must include a dependency diagram marking the current PR with `📍`.
+  - In Feature Branch Chain, create a draft/no-merge tracker PR; child PR #1 targets the tracker branch, later children target the immediate parent branch.
+  - Treat polluted diffs as base bugs: retarget or rebase until only the current work unit appears.
+  - Do not mix chain strategies after the user chooses one.
+  - Condition: Action
+  - PR ≤400 changed lines and focused: Keep single PR.
+  - PR >400, each slice can land independently: Use Stacked PRs to main.
+  - PR >400, feature must integrate before main: Use Feature Branch Chain with tracker.
+  - Generated/vendor/migration diff cannot split cleanly: Ask maintainer for `size:exception`.
+  - SDD provides `delivery_strategy`: Follow it before apply/PR creation.
+
+### cognitive-doc-design
+- Path: C:\Users\javia\.config\opencode\skills\cognitive-doc-design\SKILL.md
+- Trigger: Design docs that reduce cognitive load. Trigger: writing guides, READMEs, RFCs, onboarding, architecture, or review-facing docs.
+- Rules:
+  - Pattern: Rule
+  - Lead with the answer: Put the decision, action, or outcome first. Context comes after.
+  - Progressive disclosure: Start with the happy path, then add details, edge cases, and references.
+  - Chunking: Group related information into small sections. Keep flat lists short.
+  - Signposting: Use headings, labels, callouts, and summaries so readers know where they are.
+  - Recognition over recall: Prefer tables, checklists, examples, and templates over prose that must be remembered.
+  - Review empathy: Design docs so reviewers can verify intent without reconstructing the whole story.
+
+### comment-writer
+- Path: C:\Users\javia\.config\opencode\skills\comment-writer\SKILL.md
+- Trigger: Write warm, direct collaboration comments. Trigger: PR feedback, issue replies, reviews, Slack messages, or GitHub comments.
+- Rules:
+  - Be useful fast: Start with the actionable point. Do not recap the whole PR before feedback.
+  - Be warm and direct: Sound like a thoughtful teammate, not a corporate bot.
+  - Keep it short: Prefer 1 to 3 short paragraphs or a tight bullet list.
+  - Explain why: Give the technical reason when asking for a change.
+  - Avoid pile-ons: Comment on the highest-value issue, not every tiny preference.
+  - Match thread language: Write in the thread/user language. If writing in Spanish, use Rioplatense Spanish/voseo: `podés`, `tenés`, `fijate`, `dale`.
+  - No em dashes: Use commas, periods, or parentheses instead.
+
+### find-skills
+- Path: C:\Users\javia\.agents\skills\find-skills\SKILL.md
+- Trigger: Helps users discover and install agent skills when they ask questions like "how do I do X", "find a skill for X", "is there a skill that can...", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.
+- Rules:
+  - No compact rules declared; delegators should load the full skill file before direct work, or pass an explicit fallback path only when Project Standards cannot be injected.
+
+### go-testing
+- Path: C:\Users\javia\.config\opencode\skills\go-testing\SKILL.md
+- Trigger: Trigger: Go tests, go test coverage, Bubbletea teatest, golden files. Apply focused Go testing patterns.
+- Rules:
+  - Prefer table-driven tests for multiple cases; use `t.Run(tt.name, ...)`.
+  - Test behavior and state transitions, not implementation trivia.
+  - Use `t.TempDir()` for filesystem tests; never rely on a real home directory.
+  - Keep integration tests skippable with `testing.Short()` when they run external commands or slow flows.
+  - For Bubbletea, test `Model.Update()` directly for state changes; use `teatest` only for interactive flows.
+  - Golden files must be deterministic; update only through the repo's `-update` path and rerun tests without `-update`.
+  - Use small mocks/interfaces around system or command execution boundaries.
+  - Pure function or parser: Table-driven unit test.
+  - Error behavior: Explicit success and failure cases.
+  - File operations: `t.TempDir()` plus focused assertions.
+  - TUI state transition: Direct `Model.Update()` call with `tea.Msg`.
+  - Full TUI interaction: `teatest.NewTestModel()`.
+  - Rendered output: Golden file test.
+  - Real external command: Integration test; skip in `-short`.
+
+### imagegen
+- Path: C:\Users\javia\.codex\skills\.system\imagegen\SKILL.md
+- Rules:
+  - No compact rules declared; delegators should load the full skill file before direct work, or pass an explicit fallback path only when Project Standards cannot be injected.
+
+### issue-creation
+- Path: C:\Users\javia\.config\opencode\skills\issue-creation\SKILL.md
+- Trigger: Create Gentle AI issues with issue-first checks. Trigger: creating GitHub issues, bug reports, or feature requests.
+- Rules:
+  - **Blank issues are disabled** — MUST use a template (bug report or feature request)
+  - **Every issue gets `status:needs-review` automatically** on creation
+  - **A maintainer MUST add `status:approved`** before any PR can be opened
+  - **Questions go to [Discussions](https://github.com/Gentleman-Programming/agent-teams-lite/discussions)**, not issues
+
+### judgment-day
+- Path: C:\Users\javia\.config\opencode\skills\judgment-day\SKILL.md
+- Trigger: Trigger: judgment day, dual review, adversarial review, juzgar. Run blind dual review, fix confirmed issues, then re-judge.
+- Rules:
+  - Resolve project skills before launching agents: read skill registry, match compact rules by target files/task, and inject the same `Project Standards` block into both judge prompts and fix prompts.
+  - Launch **two blind judges in parallel** with identical target and criteria; never review the code yourself.
+  - Wait for both judges before synthesis; never accept a partial verdict.
+  - Classify warnings as `WARNING (real)` only if normal intended use can trigger them; otherwise downgrade to INFO as `WARNING (theoretical)`.
+  - Ask before fixing Round 1 confirmed issues.
+  - After any fix agent runs, immediately re-launch both judges in parallel before commit/push/done/session summary.
+  - Terminal states are only `JUDGMENT: APPROVED` or `JUDGMENT: ESCALATED`.
+  - After 2 fix iterations with remaining issues, ask the user whether to continue.
+  - Condition: Action
+  - Target unclear: Ask for scope; do not launch judges.
+  - No skill registry: Warn, proceed with generic criteria, and record `Skill Resolution: none`.
+  - Both judges find same CRITICAL/real WARNING: Confirmed; ask/fix according to round rules.
+  - One judge finds issue: Suspect; report and triage, do not auto-fix.
+  - Judges contradict: Escalate for manual decision.
+  - Round 2+ has only theoretical warnings/suggestions: Report as INFO; do not re-judge.
+
+### openai-docs
+- Path: C:\Users\javia\.codex\skills\.system\openai-docs\SKILL.md
+- Rules:
+  - No compact rules declared; delegators should load the full skill file before direct work, or pass an explicit fallback path only when Project Standards cannot be injected.
+
+### plugin-creator
+- Path: C:\Users\javia\.codex\skills\.system\plugin-creator\SKILL.md
+- Rules:
+  - No compact rules declared; delegators should load the full skill file before direct work, or pass an explicit fallback path only when Project Standards cannot be injected.
+
+### skill-creator
+- Path: C:\Users\javia\.config\opencode\skills\skill-creator\SKILL.md
+- Trigger: Trigger: new skills, agent instructions, documenting AI usage patterns. Create LLM-first skills with valid frontmatter.
+- Rules:
+  - When working in this repo, first follow `docs/skill-style-guide.md` as the normative source before creating or updating skills.
+  - If that guide is unavailable, use the compact inline rules below.
+  - A skill is a runtime instruction contract for an LLM, not human documentation.
+  - Do not add a `Keywords` section; preserve essential trigger words in `description`.
+  - References must point to local files.
+  - Keep the skill body concise: target 180–450 tokens, recommended max 700, hard max 1000.
+  - Need: Action
+  - Code templates, schemas, fixtures, generated examples: Put them in `assets/`
+  - Conceptual detail, edge cases, existing docs: Put local links in `references/`
+  - Long explanation in `SKILL.md`: Move it to a supporting file
+  - Multiple meaningful paths: Add a compact decision table
+
+### skill-installer
+- Path: C:\Users\javia\.codex\skills\.system\skill-installer\SKILL.md
+- Rules:
+  - No compact rules declared; delegators should load the full skill file before direct work, or pass an explicit fallback path only when Project Standards cannot be injected.
+
+### work-unit-commits
+- Path: C:\Users\javia\.config\opencode\skills\work-unit-commits\SKILL.md
+- Trigger: Plan commits as reviewable work units. Trigger: implementation, commit splitting, chained PRs, or keeping tests and docs with code.
+- Rules:
+  - Commit by work unit: A commit represents a deliverable behavior, fix, migration, or docs unit.
+  - Do not commit by file type: Avoid `models`, then `services`, then `tests` if none works alone.
+  - Keep tests with code: Tests belong in the same commit as the behavior they verify.
+  - Keep docs with the user-visible change: Docs belong with the feature or workflow they explain.
+  - Tell a story: A reviewer should understand why each commit exists from its diff and message.
+  - Future PR-ready: Each commit should be a candidate chained PR when the change grows.
+  - SDD workload guard: If SDD tasks forecast a >400-line change, group commits into chained PR slices before implementation.

@@ -15,6 +15,11 @@ import type { RelayClient } from './relayClient';
 
 const BOGOTA = { lat: 4.6097, lng: -74.0817 };
 
+/** Mirrors AnnouncePresence in Kotlin: meeting a peer is itself the distress signal. */
+const PRESENCE_DRAFT: TelegramDraft = {
+  eventId: 'ZIRO-LIVE', event: 'EARTHQUAKE', status: 'EMERGENCY', location: BOGOTA, severity: 3,
+};
+
 const DEFAULT_PROFILE: ProfileInput = {
   userId: 'USER123', fullName: 'Juan Perez', docType: 'CC', docNumber: '1020304050',
   birthDate: '1991-03-14', bloodType: 'O', bloodRh: 'POSITIVE', allergies: ['penicilina'],
@@ -92,6 +97,23 @@ export function createFakeRelayClient(): RelayClient {
     emit({ type: 'TELEGRAM_RECEIVED', peerId, telegram: JSON.stringify(stored) });
   };
 
+  /** Signs nothing and stores at hop 0, exactly like SendTelegram on the origin device. */
+  const originate = (draft: TelegramDraft): Telegram => {
+    const telegram = sampleTelegram({
+      user_id: profile.userId,
+      event_id: draft.eventId.trim(), event: draft.event, status: draft.status,
+      location: draft.location, severity: draft.severity,
+      vital: {
+        name: profile.fullName, age: 35, blood: `${profile.bloodType}${profile.bloodRh === 'POSITIVE' ? '+' : '-'}`,
+        allergies: profile.allergies, conditions: profile.chronicConditions, medications: profile.medications,
+        disability: profile.disability, pregnant: profile.isPregnant,
+      },
+    });
+    // The origin stores its own telegram at hop 0 - store-and-forward starts here.
+    ledger.set(telegram.id, { telegram, receivedFrom: null, deliveredTo: [] });
+    return telegram;
+  };
+
   return {
     getStatus: () => status,
 
@@ -103,6 +125,11 @@ export function createFakeRelayClient(): RelayClient {
           connectedPeers.add('fake-peer-01');
           emit({ type: 'PEER_CONNECTED', peerId: 'fake-peer-01' });
           setStatus('SYNCING');
+          // Meeting a peer is the trigger, same rule as RelayEngine. The heartbeat that
+          // follows is not simulated here - see PresenceSchedule for the real ladder.
+          const presence = originate(PRESENCE_DRAFT);
+          emit({ type: 'TELEGRAM_SENT', peerId: 'fake-peer-01', telegramId: presence.id });
+          emit({ type: 'TELEGRAM_DELIVERED', peerId: 'fake-peer-01', telegramId: presence.id });
         }, 1600),
         // A peer relaying something to us, which is the case the UI actually has to render.
         setTimeout(() => ingest(sampleTelegram({ user_id: 'USER456', severity: 4 }), 'fake-peer-01'), 2600),
@@ -135,18 +162,7 @@ export function createFakeRelayClient(): RelayClient {
     async sendTelegram(draft: TelegramDraft) {
       if (!draft.eventId.trim()) throw new Error('An event identifier is required.');
       if (draft.severity < 1 || draft.severity > 5) throw new Error('Severity must be between 1 and 5.');
-      const telegram = sampleTelegram({
-        user_id: profile.userId,
-        event_id: draft.eventId.trim(), event: draft.event, status: draft.status,
-        location: draft.location, severity: draft.severity,
-        vital: {
-          name: profile.fullName, age: 35, blood: `${profile.bloodType}${profile.bloodRh === 'POSITIVE' ? '+' : '-'}`,
-          allergies: profile.allergies, conditions: profile.chronicConditions, medications: profile.medications,
-          disability: profile.disability, pregnant: profile.isPregnant,
-        },
-      });
-      // The origin stores its own telegram at hop 0 — store-and-forward starts here.
-      ledger.set(telegram.id, { telegram, receivedFrom: null, deliveredTo: [] });
+      const telegram = originate(draft);
       emit({ type: 'TELEGRAM_SENT', peerId: 'fake-peer-01', telegramId: telegram.id });
       return telegram;
     },

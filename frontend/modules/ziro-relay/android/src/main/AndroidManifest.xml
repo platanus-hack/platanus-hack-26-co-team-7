@@ -38,12 +38,18 @@
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!--
+      The presence heartbeat repeats with fresh coordinates while the app is backgrounded,
+      so the service tracks location too. On Android 14+ every foregroundServiceType needs
+      its matching typed permission or startForeground() throws at runtime.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application>
         <service
             android:name="com.ziro.relay.adapters.service.RelayForegroundService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
     </application>
 </manifest>

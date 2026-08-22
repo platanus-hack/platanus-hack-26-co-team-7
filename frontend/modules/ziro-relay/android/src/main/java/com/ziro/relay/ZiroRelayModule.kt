@@ -102,6 +102,9 @@ class ZiroRelayModule : Module() {
             val input = runCatching { json.decodeFromString(ProfileInput.serializer(), profileJson) }
                 .getOrElse { throw IllegalArgumentException("Invalid profile: ${it.message}") }
             RelayContainer.profiles.save(input.toDomain(RelayContainer.profiles.get()))
+            // A changed medical block is exactly the update the mesh should not sit on
+            // until the next rung of the backoff ladder. Announce it now.
+            RelayContainer.engine.onProfileChanged()
         }
 
         AsyncFunction("start").Coroutine<Unit> {

@@ -80,11 +80,11 @@ export function HomeScreen() {
       {relay.error ? <Text style={styles.error}>{relay.error}</Text> : null}
       {tab === TABS.RELAY ? <RelayPanel relay={relay} /> : null}
       {tab === TABS.CREATE ? <TelegramForm draft={telegramDraft} onChange={setTelegramDraft} onSubmit={() => void submitTelegram()} /> : null}
-      {tab === TABS.INBOX ? <InboxPanel telegrams={relay.telegrams} deliveries={relay.deliveries} /> : null}
+      {tab === TABS.INBOX ? <InboxPanel telegrams={relay.inbox} /> : null}
       {tab === TABS.PROFILE ? <ProfileForm draft={profileDraft} onChange={setProfileDraft} onSave={() => void saveProfile()} /> : null}
       <PermissionSetupModal relay={relay} visible={showPermissionSetup} onDismiss={() => setPermissionModalDismissed(true)} />
       <Modal transparent visible={connectedPeer !== null} animationType="fade" onRequestClose={() => setConnectedPeer(null)}>
-        <View style={styles.modalBackdrop}><View style={styles.modalCard}><Text style={styles.heading}>Nearby device connected</Text><Text style={styles.help}>{connectedPeer} is connected. Pending telegrams are now exchanging locally.</Text><Action label="Dismiss" onPress={() => setConnectedPeer(null)} /></View></View>
+        <View style={styles.modalBackdrop}><View style={styles.modalCard}><Text style={styles.heading}>Nearby device connected</Text><Text style={styles.help}>{connectedPeer} is connected. Your emergency card left automatically with your current position, and everything that device is carrying is arriving in your inbox.</Text><Action label="Dismiss" onPress={() => setConnectedPeer(null)} /></View></View>
       </Modal>
     </View>
   );
@@ -118,11 +118,12 @@ function RelayPanel({ relay }: RelayPanelProps) {
       <Text>Granted: {permissionList(relay.permissions.granted)}</Text>
       <Text>Denied: {permissionList(relay.permissions.denied, 'none')}</Text>
     </View>
+    <OwnCard telegrams={relay.outbox} deliveries={relay.deliveries} />
     {!permissionsGranted ? <Action label="Grant nearby permissions" onPress={() => { void relay.requestPermissions().catch(() => undefined); }} /> : null}
     {relay.permissions.denied.length > 0 ? <Text style={styles.error}>Permissions denied: {relay.permissions.denied.join(', ')}</Text> : null}
     <Action label="Start offline relay (requests permissions)" onPress={() => void relay.start().catch((error: unknown) => Alert.alert('Relay cannot start', messageFor(error)))} disabled={relay.status !== 'IDLE'} />
     <Action label="Stop relay" onPress={() => void relay.stop()} disabled={relay.status === 'IDLE'} secondary />
-    <Text style={styles.help}>Keep Bluetooth and Wi-Fi enabled. Starting the relay makes this phone advertise and discover nearby ZIRO phones without Internet.</Text>
+    <Text style={styles.help}>Keep Bluetooth and Wi-Fi enabled. The moment another ZIRO phone connects, your profile leaves automatically as a telegram with your position at that instant. It repeats on a widening gap while you stay in range: 3, 6, 12, 24, 48 minutes, then hourly. Editing your profile sends an update right away. Use Create only to report a specific incident.</Text>
     {relay.lastReject ? <Text style={styles.error}>Last incoming telegram rejected: {relay.lastReject}</Text> : null}
     {relay.radioError ? <View><Text style={styles.error}>Radio: {relay.radioError}</Text><Action label="Reset relay radio" onPress={() => { void relay.stop().then(relay.start); }} secondary /></View> : null}
     <View style={styles.diagnostics}><Text style={styles.diagnosticTitle}>Recent relay activity</Text>{relay.relayEvents.length === 0 ? <Text style={styles.diagnosticLine}>No native relay events yet.</Text> : relay.relayEvents.slice(0, 5).map((event, index) => <Text key={`${event.type}-${index}`} style={styles.diagnosticLine}>{formatRelayEvent(event)}</Text>)}</View>
@@ -144,23 +145,40 @@ function TelegramForm({ draft, onChange, onSubmit }: TelegramFormProps) {
   </ScrollView>;
 }
 
-interface InboxPanelProps { telegrams: LedgerEntry[]; deliveries: Record<string, string>; }
-function InboxPanel({ telegrams, deliveries }: InboxPanelProps) {
-  const receivedCount = telegrams.filter(({ receivedFrom }) => receivedFrom !== null).length;
+interface InboxPanelProps { telegrams: LedgerEntry[]; }
+/**
+ * Other people, only. This device's own card is NOT here even though the ledger carries
+ * it: an inbox that lists what you sent yourself reads like a bug, and it buries the one
+ * thing that matters - somebody nearby needs help. Your own card lives in RELAY.
+ */
+function InboxPanel({ telegrams }: InboxPanelProps) {
   return <ScrollView contentContainerStyle={styles.content}>
-    <Text style={styles.heading}>Local telegram ledger</Text>
-    <Text style={styles.help}>This is the device ledger. It remains available while connectivity is absent and after app restarts.</Text>
-    {receivedCount > 0 ? <Text style={styles.receipt}>Received locally: {receivedCount} telegram(s)</Text> : null}
-    {telegrams.length === 0 ? <Text style={styles.empty}>No telegrams stored yet. Create one or start the relay to receive one.</Text> : null}
-    {telegrams.map(({ telegram, receivedFrom, deliveredTo }) => <View key={telegram.id} style={styles.telegramCard}>
+    <Text style={styles.heading}>People who need help</Text>
+    <Text style={styles.help}>Everything this phone received from the mesh. It survives with no connectivity and across restarts.</Text>
+    {telegrams.length === 0 ? <Text style={styles.empty}>Nobody has reached this device yet. Start the relay and wait for another ZIRO phone.</Text> : <Text style={styles.receipt}>{telegrams.length} person(s) reported</Text>}
+    {telegrams.map(({ telegram, receivedFrom }) => <View key={telegram.id} style={styles.telegramCard}>
       <Text style={styles.cardTitle}>{telegram.vital?.name ?? telegram.user_id} · {telegram.status}</Text>
       <Text>{telegram.event} / severity {telegram.severity}</Text><Text>TTL {telegram.ttl} · hops {telegram.hop}</Text>
       <Text>Origin {telegram.origin} · {new Date(telegram.timestamp * 1000).toLocaleString()}</Text>
       <Text>Coordinates {telegram.location.lat.toFixed(4)}, {telegram.location.lng.toFixed(4)}</Text>
-      <Text style={styles.delivery}>{deliveries[telegram.id] ?? (receivedFrom ? `Received from ${receivedFrom}` : deliveredTo.length ? `Delivered to ${deliveredTo.join(', ')}` : 'Outbound: waiting for a peer')}</Text>
+      <Text style={styles.delivery}>Relayed by {receivedFrom}</Text>
       {telegram.vital ? <Text>Blood {telegram.vital.blood ?? 'unknown'} · allergies {telegram.vital.allergies.join(', ') || 'none'}</Text> : null}
     </View>)}
   </ScrollView>;
+}
+
+interface OwnCardProps { telegrams: LedgerEntry[]; deliveries: Record<string, string>; }
+/** Proof this device is on the air: what it sent, when, and who acknowledged it. */
+function OwnCard({ telegrams, deliveries }: OwnCardProps) {
+  const latest = telegrams[0];
+  return <View style={styles.statusCard}>
+    <Text style={styles.diagnosticTitle}>Your emergency card</Text>
+    {!latest ? <Text style={styles.diagnosticLine}>Not sent yet. It leaves automatically the moment another ZIRO phone connects.</Text> : <View>
+      <Text style={styles.diagnosticLine}>Sent {telegrams.length} time(s) · last {new Date(latest.telegram.timestamp * 1000).toLocaleTimeString()}</Text>
+      <Text style={styles.diagnosticLine}>Position {latest.telegram.location.lat.toFixed(4)}, {latest.telegram.location.lng.toFixed(4)}</Text>
+      <Text style={styles.diagnosticLine}>{deliveries[latest.telegram.id] ?? (latest.deliveredTo.length ? `Delivered to ${latest.deliveredTo.join(', ')}` : 'Waiting for a peer to acknowledge')}</Text>
+    </View>}
+  </View>;
 }
 
 interface ProfileFormProps { draft: ProfileInput | null; onChange: (profile: ProfileInput) => void; onSave: () => void; }
