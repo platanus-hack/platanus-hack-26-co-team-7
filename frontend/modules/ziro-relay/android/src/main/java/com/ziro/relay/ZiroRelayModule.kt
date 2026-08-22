@@ -1,11 +1,10 @@
 package com.ziro.relay
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.ComponentActivity
-import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.ziro.relay.adapters.profile.HardcodedProfileStore
@@ -22,10 +21,11 @@ import com.ziro.relay.domain.Profile
 import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
+import expo.modules.kotlin.activityresult.AppContextActivityResultContract
+import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -69,22 +69,17 @@ class ZiroRelayModule : Module() {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
     /**
-     * Permission launcher state.
+     * Permission launcher, wired through Expo's [RegisterActivityContracts] block below.
      *
-     * AndroidX requires registerForActivityResult to run on a ComponentActivity that is at
-     * least in CREATED state — and ideally before STARTED. We try to register in OnCreate,
-     * but if the activity isn't attached yet (the common case: the module is constructed
-     * before MainActivity.onCreate returns), we fall back to lazy registration on the first
-     * call from JS, when an activity is guaranteed to exist.
-     *
-     * The callback is fixed at registration time (ActivityResultLauncher.launch() does NOT
-     * accept a per-call callback in 1.8.x — only the input and optional ActivityOptions).
-     * We route results to whichever deferred is currently parked in `pendingPermissionResult`.
-     * Requests are serialized through this single field, which is acceptable for an MVP: the
-     * UI only ever triggers one start() / one requestPermissions() at a time.
+     * Expo's [AppContextActivityResultLauncher] is built on a custom registry that adds a
+     * LifecycleEventObserver to the activity and dispatches results on ON_START — so unlike
+     * AndroidX's [androidx.activity.result.ActivityResultLauncher], registration is safe at
+     * any lifecycle state, including RESUMED, which is the only state a React Native activity
+     * is guaranteed to be in by the time a JS call lands. The launcher is initialized by
+     * Expo's machinery after OnCreate (RegisterActivityContracts runs on appContext.mainQueue)
+     * and before any AsyncFunction can fire from JS.
      */
-    private var permissionLauncher: ActivityResultLauncher<Array<String>>? = null
-    private var pendingPermissionResult: CompletableDeferred<Map<String, Boolean>>? = null
+    private lateinit var permissionLauncher: AppContextActivityResultLauncher<Array<String>, Map<String, Boolean>>
 
     override fun definition() = ModuleDefinition {
         Name("ZiroRelay")
@@ -94,9 +89,10 @@ class ZiroRelayModule : Module() {
         OnCreate {
             appContext.reactContext?.let { RelayContainer.attach(it) }
             observeEngine()
-            // Best-effort early registration. If the activity isn't available yet, the lazy
-            // path in requestPermissionsInternal() will register it before any JS call.
-            (appContext.currentActivity as? ComponentActivity)?.let { registerPermissionLauncher(it) }
+        }
+
+        RegisterActivityContracts {
+            permissionLauncher = registerForActivityResult(RequestPermissionsContract)
         }
 
         /** Current node status without waiting for an event. Used on mount. */
@@ -205,62 +201,25 @@ class ZiroRelayModule : Module() {
     }
 
     /**
-     * Registers the permission launcher exactly once. Idempotent across calls: the launcher
-     * is tied to a single ComponentActivity and must not be re-registered on the same host.
-     * The callback is fixed at registration — ActivityResultLauncher.launch(input, callback)
-     * does not exist in activity-ktx 1.8.x, only launch(input) and launch(input, options).
-     */
-    private fun registerPermissionLauncher(activity: ComponentActivity) {
-        if (permissionLauncher != null) return
-        permissionLauncher = activity.registerForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions(),
-        ) { result ->
-            // Resume the currently parked coroutine, if any. We tolerate a null deferred
-            // because the launcher can fire once after the activity is recreated; we just
-            // drop that result rather than crash.
-            pendingPermissionResult?.complete(result)
-            pendingPermissionResult = null
-        }
-    }
-
-    /**
      * Resolves the runtime permissions required for Nearby Connections over BLE + Wi-Fi
      * Direct, plus the foreground service notification. Returns the (granted, denied) split
      * BEFORE any serialization, so both `requestPermissions` (JSON to JS) and `start` (raw
      * map for the throw decision) can share the same logic.
-     *
-     * Throws IllegalStateException if no ComponentActivity is attached — without an activity
-     * there is nowhere to show the system dialog and no ActivityResultRegistry to dispatch
-     * the result into.
      */
     private suspend fun requestPermissionsInternal(): Map<String, List<String>> {
-        val activity = appContext.currentActivity as? ComponentActivity
-            ?: throw IllegalStateException(
-                "Cannot request ZIRO relay permissions: no ComponentActivity is attached " +
-                    "to the current app context.",
-            )
-        registerPermissionLauncher(activity)
-        val launcher = permissionLauncher
-            ?: throw IllegalStateException("Permission launcher was not registered.")
-
+        val context = RelayContainer.context()
         val perms = requiredPermissions()
         val alreadyGranted = perms.filter {
-            ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
         val missing = perms.filter {
-            ContextCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isEmpty()) {
             return mapOf("granted" to alreadyGranted.distinct(), "denied" to emptyList())
         }
 
-        val deferred = CompletableDeferred<Map<String, Boolean>>()
-        pendingPermissionResult = deferred
-        // ActivityResultLauncher.launch(input, callback) does not exist in activity-ktx 1.8.x.
-        // The callback was bound at registerForActivityResult time; the launcher just dispatches
-        // its result to pendingPermissionResult.
-        launcher.launch(missing.toTypedArray())
-        val result = deferred.await()
+        val result = permissionLauncher.launch(missing.toTypedArray())
         val newlyGranted = result.filterValues { it }.keys
         val denied = result.filterValues { !it }.keys
         return mapOf(
@@ -409,4 +368,19 @@ private data class ProfileInput(
             profile.questionId,
         )
     }
+}
+
+private object RequestPermissionsContract :
+    AppContextActivityResultContract<Array<String>, Map<String, Boolean>> {
+
+    private val delegate = ActivityResultContracts.RequestMultiplePermissions()
+
+    override fun createIntent(context: Context, input: Array<String>): Intent =
+        delegate.createIntent(context, input)
+
+    override fun parseResult(
+        input: Array<String>,
+        resultCode: Int,
+        intent: Intent?,
+    ): Map<String, Boolean> = delegate.parseResult(resultCode, intent)
 }
