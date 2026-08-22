@@ -48,15 +48,37 @@ ZIRO no detecta sismos. Usa EMSC / un endpoint propio / un botón manual como tr
 
 ## Decisiones arquitectónicas tomadas
 
+### Aclaración arquitectónica crítica — dónde vive Nearby
+
+**Nearby Connections vive en el teléfono, NO en el backend.** El backend es independiente y solo conoce la API HTTP/WS. El modelo correcto es:
+
+- **Phone → Nearby → Phone** (capa radio entre pares, sin Internet).
+- **Phone + Internet → Backend Render** (canal saliente clásico HTTP/WS, solo cuando un nodo tiene conectividad).
+
+Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver diagrama completo en `communication.md`.
+
+### Tabla de decisiones
+
 | Decisión | Lo elegido | Por qué | Lo rechazado |
 |---|---|---|---|
 | Capa radio | Google Nearby Connections | Abstrae Wi-Fi Direct + BLE, maneja discovery/auth/encriptación/re-connection | Bridgefy SDK (USENIX 2022 paper demostró MITM), Serval (abandonado desde 2016), Meshtastic (requiere hardware $30+), Wi-Fi Direct crudo (boilerplate pesado) |
-| Tamaño telegrama | JSON ~120 bytes | Debug fácil, no requiere librería externa | CBOR/MessagePack (no core, complejidad extra) |
-| Identificador | UUID v4 | Universal, no colisiona | Hash incremental (rompe con resets) |
+| **Dónde corre Nearby** | **En el APK de cada teléfono** (módulo Kotlin) | El backend no tiene radios. Solo puede recibir JSON por HTTP. | Backend → Nearby → teléfonos (arquitectura imposible, el backend no tiene BT/Wi-Fi Direct) |
+| **Stack móvil** | **React Native (UI/lógica) + Kotlin native module (radio/sensores) + Expo Dev Build** | RN acelera iteración; Kotlin expone APIs nativas que RN no tiene (Nearby, BT, GPS, cámara, mic, foreground services). Expo Dev Build genera APK con Kotlin adentro. | Expo Go (no soporta módulos nativos custom), RN puro sin Kotlin (sin acceso a Nearby), app nativa 100% Kotlin (más lento de iterar en 36h) |
+| **Stack backend** | **Node.js (Express) o Python (FastAPI) en Render** | Lo que el equipo domine; Render free tier alcanza para la demo; SQLite/Postgres como storage | Go (menos familiar), serverless (cold start mata la latencia), Docker custom (overhead para 36h) |
+| Tamaño telegrama | JSON ~120-200 bytes | Debug fácil, no requiere librería externa | CBOR/MessagePack (no core, complejidad extra) |
+| Identificador mensaje | UUID v4 | Universal, no colisiona, clave de dedup | Hash incremental (rompe con resets) |
+| Identificador persona | `user_id` separado del `id` del mensaje | Varios telegramas del mismo afectado (EMERGENCY → NEED_HELP) comparten `user_id` pero tienen `id` distinto | Mezclar ambos (rompe dedup) |
+| Identificador evento | `event_id` (ej: `EARTHQUAKE001`) | Permite agrupar todos los afectados del mismo desastre en el backend | Sin event_id (no se puede hacer heatmap ni cierre de evento) |
 | Sincronización entre pares | Diff de IDs primero, bytes después | Minimiza payload (~1 KB metadata vs MB) | Flood completo (saturaría), gossip puro (más complejo) |
 | Límite del ledger local | TTL=0, ts>24h, LRU 5MB | Nodo no colapsa en desastre largo | Sin límite (DoS al propio nodo) |
+| **Memoria del nodo** | **SQLite local** (tablas `messages` + `hops` + `delivered_peers` + `evidence_chunks`) | JSON es solo transporte; SQLite es lo que se recuerda. Permite dedup, store-and-forward, auditoría del recorrido. | JSON crudo en archivos (sin queries, sin índices), solo en memoria (se pierde al reiniciar) |
+| **Encriptación local** | **SQLite plano para MVP demo, SQLCipher para producción** | Un teléfono abandonado no debe filtrar nombre, sangre ni ubicación. Migración drop-in (misma API). | Sin encriptación (riesgo privacidad), caja fuerte de Android (no aplica a SQLite de la app) |
+| **Auto-wipe post-evento** | **72h después de que el backend declara el evento cerrado, se borran campos sensibles (name, blood, age, medical_note, family_contact, location, question_id, answer_hash)**; se conservan id, user_id, event_id, timestamp para estadísticas | Minimiza ventana de exposición si el teléfono cae en malas manos | Borrado inmediato (rompería re-transmisión si hay peers lentos), nunca borrar (riesgo privacidad indefinido) |
+| **Auto-gateway** | **Cuando un nodo detecta Internet, flushea automáticamente su ledger sin prompt** | En emergencia, latencia mata; cada segundo cuenta | Prompt "¿querés subir?" (fricción mata conversión), backend-pull (más complejo, stateful) |
 | Evidencia (video/audio) | Patrón C: telegrama rápido + upload perezoso del video | Defendible en 36h, honesto con el usuario | Patrón A (riesgo pérdida), Patrón B (complejidad brutal) |
-| Estado del nodo | 5 estados (IDLE/ADVERTISING/SYNC/RELAY/ORPHAN) | Maneja todos los casos incluyendo abandono | Sin estado (race conditions), 3 estados (insuficiente) |
+| **Estado del nodo** | 5 estados (IDLE/ADVERTISING/SYNC/RELAY/ORPHAN) — comportamiento de red | Maneja todos los casos incluyendo abandono | Sin estado (race conditions), 3 estados (insuficiente) |
+| **Estado de la persona** | **3 estados (EMERGENCY/NEED_HELP/SAFE)** — ortogonales a los del nodo | El comportamiento de la red (nodo) es independiente del estado del afectado (persona). NEED_HELP tiene prioridad sobre EMERGENCY. | Confundir ambos (rompe modelo mental, rompe lógica de prioridad en backend) |
+| **Verificación SAFE** | **`question_id` + `answer_hash`** en el telegrama; **la respuesta en claro nunca viaja por la red mesh**; el backend compara el hash | Si un atacante escucha la red, no ve respuestas. Compatible con C5 (familiar responde desde otro ZIRO). | Pregunta + respuesta en claro (filtra privacidad, ataque trivial al eavesdropping), comparación local en cada nodo (inconsistente, sin fuente única de verdad) |
 | Seguridad | HMAC-SHA256 con device_secret | Blinda MITM | Sin firma (riesgo USENIX 2022 sobre Bridgefy) |
 | Servicio de discovery | `serviceId = "ziro.relay.v1"` | Versionado, permite migración futura | Hardcoded sin versión |
 
@@ -87,13 +109,16 @@ ZIRO no detecta sismos. Usa EMSC / un endpoint propio / un botón manual como tr
 
 ---
 
-## Decisiones pendientes (TBD — no bloqueantes para arrancar)
+## Decisiones pendientes (TBD — no bloqueantes para arrancar, pero bloqueantes para el doc final)
 
-- **Stack backend:** Node/Python/Go (lo que el equipo domine)
+- **Stack backend concreto (Node vs Python):** decidir quién lo codea. Stack ya está definido (Render + Express/FastAPI + SQLite + Emergency Orchestrator).
 - **Stack dashboard familiar:** web app, SMS, o app companion
 - **Filtro geográfico del ledger:** no para MVP, mejora v2
 - **iOS support:** fuera de scope para 36h
 - **CBOR/MessagePack para telegrama:** no core, JSON alcanza
+- ✅ **Modelo de identidad (cerrado 2026-08-22):** el perfil del usuario (nombre, documento, tipo de sangre, contactos de emergencia, `question_id`/`answer_hash`) se carga en el **flujo de onboarding al instalar la app**, antes de cualquier evento. El perfil vive localmente cifrado (SQLite + SQLCipher).
+- ✅ **Acceso de familiares (cerrado 2026-08-22):** los familiares **deben instalar ZIRO** para participar en flujos offline (caso C5 de `orphan-device.md` — un familiar marca SAFE desde otro dispositivo). SMS / web ligera / app companion queda fuera del MVP.
+- ✅ **Rescatistas (cerrado 2026-08-22):** la visión final es un **dashboard web centralizado** (online-only, requiere backend). Para el MVP del hackathon, los rescatistas también usan la **app móvil** con una vista read-only del ledger local. El dashboard web es post-hackathon.
 
 ---
 

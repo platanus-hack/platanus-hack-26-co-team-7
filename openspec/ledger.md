@@ -4,6 +4,15 @@
 
 Cada nodo ZIRO mantiene una **base de datos local SQLite** con **TODOS los telegramas que vio**, no solo los que retransmite. Esta base se sincroniza con cada par usando un protocolo de **gossip** simple (diff de IDs primero, bytes después).
 
+### JSON vs SQLite — dos roles distintos
+
+| Capa | Qué es | Para qué |
+|---|---|---|
+| **JSON** (telegrama) | Paquete de transporte que viaja por la red mesh | Información en tránsito: ~200 bytes, inmutable, schema fijo (ver `protocol.md`) |
+| **SQLite** (ledger) | **Memoria del nodo** | Persistencia local: dedup por id, store-and-forward cuando no hay Internet, re-transmisión al reconectarse, auditoría del recorrido del mensaje |
+
+**El JSON no reemplaza al SQLite.** El JSON es lo que se manda; el SQLite es lo que se recuerda. Cuando un nodo recibe un JSON, lo deserializa y lo guarda como fila. Si el nodo muere, el JSON se pierde; si solo pierde conexión, el SQLite le permite reintentar.
+
 ## Por qué esto importa (no es decoración)
 
 Sin ledger distribuido, ZIRO sería "solo otro mesh messenger". Con ledger distribuido, ZIRO se vuelve:
@@ -11,28 +20,42 @@ Sin ledger distribuido, ZIRO sería "solo otro mesh messenger". Con ledger distr
 1. **Un repositorio distribuido de emergencias activas** — un rescatista con ZIRO offline puede ver qué personas se reportaron en su zona.
 2. **Un sistema tolerante a fallos** — si un nodo se pierde, otros siguen teniendo la info.
 3. **Un sistema útil incluso sin Internet** — el ledger local es consultable desde la app.
+4. **Un sistema con store-and-forward real** — un nodo sin Internet puede acumular mensajes y flush-earlos apenas recupera señal.
+
+## Encriptación local
+
+El ledger puede contener **datos sensibles**: nombre, tipo de sangre, contactos familiares, ubicación precisa. Si un teléfono cae en malas manos después del desastre, esa información no debe filtrarse.
+
+- **MVP demo:** SQLite plano. Aceptable para la hackatón en ambiente controlado.
+- **Producción:** **SQLCipher** (`net.zetetic:android-database-sqlcipher`) con clave derivada del device. Cada nodo que "encuentra" un teléfono abandonado no debe poder leer el contenido sin la clave.
+
+La migración MVP → prod es drop-in porque SQLCipher implementa la misma API de SQLite.
 
 ## Esquema SQLite (Room)
 
+Dos tablas centrales: `messages` (el contenido) y `hops` (la auditoría del recorrido). Más dos tablas auxiliares.
+
 ```kotlin
-@Entity(tableName = "telegramas")
-data class TelegramEntity(
+@Entity(tableName = "messages")
+data class MessageEntity(
     @PrimaryKey val id: String,           // UUID v4 — clave de dedup universal
-    val v: Int,                           // versión del protocolo
-    val event: String,                    // EARTHQUAKE, FIRE, FLOOD, MEDICAL, OTHER
-    val lat: Double,
-    val lng: Double,
-    val ts: Long,                         // epoch seconds del origen
-    val severity: Int,                    // 1-5
-    val hop: Int,
-    val ttl: Int,
-    val origin: String,                   // hash corto del device origen
-    val personName: String?,
-    val personAge: Int?,
-    val medicalNote: String?,
-    val familyContact: String?,
-    val receivedAt: Long,                 // epoch seconds LOCAL (cuándo llegó a este nodo)
-    val hmac: String?                     // firma criptográfica opcional
+    val payloadJson: String,              // telegrama completo serializado (fuente de verdad)
+    val status: String,                   // RECEIVED | RELAYED | FLUSHED | WIPED
+    val createdAt: Long,                  // epoch seconds LOCAL (cuándo llegó a este nodo)
+    val sent: Boolean,                    // true si ya se entregó al backend (auto-gateway)
+    val receivedFrom: String?,            // peerId del primer par que trajo este id (null si lo generamos nosotros)
+    val hopCount: Int,                    // cantidad actual de saltos realizados
+    val hmac: String?                     // firma criptográfica opcional del origen
+)
+
+@Entity(tableName = "hops",
+    primaryKeys = ["messageId", "hopIndex"])
+data class HopEntity(
+    val messageId: String,                // FK a messages.id
+    val hopIndex: Int,                    // 0, 1, 2, ... orden del salto
+    val fromPeer: String,                 // hash del nodo que entregó
+    val toPeer: String,                   // hash del nodo receptor
+    val timestamp: Long                   // epoch seconds LOCAL
 )
 
 @Entity(tableName = "delivered_peers",
@@ -55,15 +78,39 @@ data class EvidenceChunkEntity(
 )
 ```
 
+### Por qué dos tablas (messages + hops)
+
+`messages` guarda **qué hay** en este nodo. `hops` guarda **cómo llegó hasta acá**. Separarlas permite:
+
+- Auditar el recorrido exacto de un mensaje sin re-parsear el JSON cada vez.
+- Mostrar en el dashboard familiar el path A → B → C → D → Gateway de forma barata.
+- Detectar peers que están perdiendo mensajes (gap en la cadena).
+
 ## Reglas del ledger local
 
 ### Regla L1 — Deduplicación por id (corazón del protocolo)
 
 ```kotlin
-suspend fun onTelegram(t: Telegram) {
+suspend fun onTelegram(t: Telegram, fromPeer: String?) {
     mutex.withLock(t.id) {
-        if (dao.exists(t.id)) return@withLock  // ya lo tengo, ignoro silencioso
-        dao.insert(t.toEntity(receivedAt = now()))
+        if (messagesDao.exists(t.id)) return@withLock  // ya lo tengo, ignoro silencioso
+        messagesDao.insert(
+            MessageEntity(
+                id = t.id,
+                payloadJson = t.toJsonString(),
+                status = "RECEIVED",
+                createdAt = now(),
+                sent = false,
+                receivedFrom = fromPeer,
+                hopCount = t.hop,
+                hmac = t.hmac
+            )
+        )
+        hopsDao.insert(
+            HopEntity(messageId = t.id, hopIndex = t.hop,
+                     fromPeer = fromPeer ?: t.origin,
+                     toPeer = localNodeId, timestamp = now())
+        )
     }
 }
 ```
@@ -83,7 +130,7 @@ fun prepareForward(t: Telegram): Telegram? {
 ```kotlin
 suspend fun cleanup() {
     val cutoff = (System.currentTimeMillis() / 1000) - (24 * 3600)  // 24h
-    dao.deleteWhere("ttl <= 0 OR received_at < ?", cutoff)
+    dao.deleteWhere("status = 'WIPED' OR created_at < ?", cutoff)
 }
 ```
 
@@ -103,6 +150,67 @@ suspend fun enforceCap(maxBytes: Long = 5_000_000) {
 ### Regla L5 — Inmutabilidad semántica
 
 Un telegrama **nunca se modifica semánticamente** en tránsito. Solo cambian `hop` y `ttl`. El resto de los campos son del origen.
+
+### Regla L6 — Auto-gateway (sin confirmación humana)
+
+Cuando el nodo detecta que tiene Internet (WiFi o datos móviles), **flushea automáticamente** todos los mensajes con `sent = false`. No hay prompt "querés subir?". En una emergencia, la latencia mata.
+
+```kotlin
+suspend fun onInternetAvailable() {
+    val pending = messagesDao.getPendingFlush()        // sent = false
+    for (msg in pending) {
+        try {
+            val t = parseTelegram(msg.payloadJson)
+            api.uploadTelegram(t)
+            messagesDao.markSent(msg.id)               // sent = true
+            messagesDao.updateStatus(msg.id, "FLUSHED")
+        } catch (e: Exception) {
+            log("Flush failed for ${msg.id}: $e — will retry on next reconnect")
+            // queda como RECEIVED, sent = false. Reintento en próxima conexión.
+        }
+    }
+}
+```
+
+El flush corre en background. La UI no se entera. La única señal visible para el usuario es el ícono de "sincronizado".
+
+### Regla L7 — Auto-wipe de campos sensibles cuando el evento se cierra
+
+Cuando el backend confirma que un `event_id` está cerrado (lo recibimos por respuesta del flush o por push WS), el nodo agenda un **wipe de campos sensibles** 72 horas después. Esto minimiza el riesgo de que un teléfono abandonado filtre datos médicos o de ubicación.
+
+```kotlin
+suspend fun scheduleWipeForClosedEvent(eventId: String, closedAt: Long) {
+    val wipeAt = closedAt + (72 * 3600)
+    pendingWipesDao.insert(PendingWipe(eventId = eventId, wipeAt = wipeAt))
+}
+
+suspend fun runDueWipes(now: Long) {
+    val due = pendingWipesDao.getDue(now)
+    for (w in due) {
+        // re-leer cada payload, borrar campos sensibles, re-serializar
+        for (msg in messagesDao.getByEventId(w.eventId)) {
+            val t = parseTelegram(msg.payloadJson)
+            val wiped = t.copy(
+                name = null,
+                blood = null,
+                age = null,
+                medicalNote = null,
+                familyContact = null,
+                location = null,
+                questionId = null,
+                answerHash = null
+            )
+            messagesDao.updatePayload(msg.id, wiped.toJsonString())
+            messagesDao.updateStatus(msg.id, "WIPED")
+        }
+        pendingWipesDao.delete(w.eventId)
+    }
+}
+```
+
+**Lo que se conserva después del wipe:** `id`, `user_id`, `event_id`, `event`, `timestamp`, `severity`, `hop`, `ttl`, `origin`, `status`. Suficiente para estadísticas anonimizadas ("fueron N personas afectadas en el evento EARTHQUAKE001"), nada más.
+
+**Lo que se borra:** `name`, `blood`, `age`, `medical_note`, `family_contact`, `location`, `question_id`, `answer_hash`. Datos que un atacante podría usar para identificar, localizar o contactar a la persona.
 
 ## Protocolo de gossip (sync entre pares)
 

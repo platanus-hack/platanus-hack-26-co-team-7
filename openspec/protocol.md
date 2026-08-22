@@ -10,18 +10,23 @@ El telegrama es un objeto JSON muy pequeño (~120-200 bytes) que viaja entre nod
 {
   "v": 1,
   "id": "a8f29c3f-7b9e-4a1d-8e2f-1c5b9d6e3f4a",
+  "user_id": "USER123",
+  "event_id": "EARTHQUAKE001",
   "event": "EARTHQUAKE",
-  "lat": 4.6097,
-  "lng": -74.0817,
-  "ts": 1787440000,
+  "name": "Juan Perez",
+  "blood": "O+",
+  "age": 35,
+  "medical_note": "diabético",
+  "family_contact": "+57...",
+  "location": { "lat": 4.6097, "lng": -74.0817 },
+  "status": "EMERGENCY",
+  "question_id": "PET_NAME_42",
+  "answer_hash": "abcxyz...",
+  "timestamp": 1787440000,
   "severity": 3,
   "hop": 0,
   "ttl": 8,
-  "origin": "device_short_hash",
-  "person_name": null,
-  "person_age": null,
-  "medical_note": null,
-  "family_contact": null
+  "origin": "device_short_hash"
 }
 ```
 
@@ -30,18 +35,24 @@ El telegrama es un objeto JSON muy pequeño (~120-200 bytes) que viaja entre nod
 | Campo | Tipo | Requerido | Descripción |
 |---|---|---|---|
 | `v` | int | sí | Versión del protocolo. Permite migración futura. |
-| `id` | UUID v4 (string) | sí | Identificador único universal. **Es la clave de deduplicación.** |
-| `event` | enum string | sí | `EARTHQUAKE`, `FIRE`, `FLOOD`, `MEDICAL`, `OTHER`. |
-| `lat`, `lng` | float | sí | Coordenadas decimales (4 decimales = ~11m de precisión). |
-| `ts` | int (epoch seconds) | sí | Timestamp de cuándo ocurrió la emergencia en el origen. |
+| `id` | UUID v4 (string) | sí | Identificador único del mensaje. **Es la clave de deduplicación universal.** |
+| `user_id` | string | sí | Identificador anónimo de la persona afectada (estable entre telegramas de la misma persona). |
+| `event_id` | string | sí | Identificador de la instancia del evento disparador (ej: `EARTHQUAKE001`). Permite agrupar todos los telegramas de un mismo desastre. |
+| `event` | enum string | sí | Tipo de evento: `EARTHQUAKE`, `FIRE`, `FLOOD`, `MEDICAL`, `OTHER`. Útil para filtrado y UI. |
+| `name` | string \| null | no | Nombre completo del usuario (viene del perfil pre-cargado). |
+| `blood` | string \| null | no | Tipo de sangre (ej: `"O+"`, `"A-"`). |
+| `age` | int \| null | no | Edad de la persona. |
+| `medical_note` | string \| null | no | Nota médica breve (`"diabético"`, `"alergia a penicilina"`). |
+| `family_contact` | string \| null | no | Teléfono o email del familiar a notificar. |
+| `location` | { `lat`: float, `lng`: float } | sí | Coordenadas decimales (4 decimales = ~11m de precisión). |
+| `status` | enum string | sí | Estado de la persona: `EMERGENCY`, `NEED_HELP`, `SAFE`. Ver sección 4. |
+| `question_id` | string \| null | no | ID de la pregunta de verificación (ej: `"PET_NAME_42"`). La pregunta en sí **no viaja en el telegrama** — solo el id. |
+| `answer_hash` | string \| null | no | Hash SHA-256 (hex) de la respuesta esperada. **La respuesta en claro nunca viaja por la red mesh** — la comparación se hace en el backend. |
+| `timestamp` | int (epoch seconds) | sí | Momento en que se generó el telegrama en el origen. |
 | `severity` | int (1-5) | sí | 1=leve, 5=catastrófico. Lo setea el origen o el trigger externo. |
 | `hop` | int | sí | Contador de saltos. Inicia en 0, se incrementa en cada relay. |
 | `ttl` | int | sí | Time-to-live en saltos. Inicia en 8, decrementa en cada relay. Si llega a 0, se descarta. |
 | `origin` | string hash | sí | Hash corto del dispositivo origen (no expone identidad real). |
-| `person_name` | string \| null | no | Nombre que el usuario tipeó al activar EMERGENCY MODE. |
-| `person_age` | int \| null | no | Edad. |
-| `medical_note` | string \| null | no | Nota médica breve ("diabético", "alergia a penicilina"). |
-| `family_contact` | string \| null | no | Teléfono o email del familiar a notificar. |
 
 ### Versión serializada (compacta)
 
@@ -56,6 +67,10 @@ Si en 36h sobra tiempo, se puede meter CBOR. Pero NO es core.
 
 - **`v=1`** — permite que un nodo v2 rechace/acepte nodos v1 sin ambigüedad.
 - **`id` UUID** — es la única verdad universal. Un nodo recibe un telegrama y pregunta "¿ya tengo este id?" → decide si lo guarda o lo descarta. Sin esto, el ledger se inunda de duplicados.
+- **`user_id`** — separa la identidad de la persona del id del mensaje. Varios telegramas del mismo afectado (ej: `EMERGENCY` inicial + `NEED_HELP` después) comparten `user_id` pero tienen `id` distinto. El backend los agrupa por acá.
+- **`event_id`** — varios afectados en el mismo terremoto comparten `event_id`. Permite al backend mostrar "este desastre tiene N personas reportadas".
+- **`status`** — el estado de la **persona**, no del nodo. Es ortogonal a los 5 estados del nodo (`IDLE/ADVERTISING/SYNC/RELAY/ORPHAN`). Ver sección 4 abajo.
+- **`question_id` + `answer_hash`** — mecanismo de verificación de identidad para transicionar a `SAFE`. La pregunta (ej: "¿nombre de tu primera mascota?") está asociada al perfil pre-cargado del usuario. El `answer_hash` es el SHA-256 de la respuesta correcta. **La respuesta en claro nunca sale del teléfono.** Cuando alguien quiere confirmar que está a salvo, tipea la respuesta en la app; el backend compara el hash y, si coincide, marca `SAFE`. Si el usuario no tiene su teléfono a mano, **otro dispositivo ZIRO autorizado** (ej: el de un familiar) puede tipear la respuesta en su nombre y mandar un nuevo telegrama con `status: "SAFE"` desde su propio `origin` (mismo `user_id`). Ver `orphan-device.md`.
 - **`hop` vs `ttl`** — son ortogonales. `hop` te dice **cuántos saltos hizo** (información útil para el backend: "este mensaje pasó por 4 dispositivos antes de llegar al gateway"). `ttl` te dice **cuántos saltos le quedan** antes de morir.
 - **`origin`** — para que el gateway pueda reconstruir el path A → B → C → D → Gateway en el dashboard.
 
@@ -158,7 +173,47 @@ Cada nodo ZIRO tiene 5 estados. Las transiciones son **manejadas por eventos** (
 **Trigger:** trigger externo "cancelar emergencia" o batería < 5%.
 **Acción:** detener advertising/discovery, liberar recursos.
 
-## 4. Concurrencia y locks
+### Nota: estados del nodo ≠ estados de la persona
+
+Los 5 estados de arriba describen el **comportamiento del nodo** (qué está haciendo en la red mesh). Son ortogonales a los **estados de la persona afectada**, que se modelan aparte en la sección siguiente.
+
+## 4. Estados de la persona (3, ortogonales a los del nodo)
+
+La persona afectada tiene exactamente 3 estados posibles, independientes de los 5 estados del nodo:
+
+| Estado | Significado | Prioridad en el backend |
+|---|---|---|
+| `EMERGENCY` | Estado por defecto cuando se dispara el evento. "No hay confirmación de seguridad." | Media |
+| `NEED_HELP` | La persona (o un autorizado) marcó explícitamente que necesita ayuda. | **Alta** (la más urgente) |
+| `SAFE` | La persona (o un autorizado) confirmó seguridad tipeando la respuesta correcta a `question_id`. | Baja (resuelve) |
+
+### Transiciones permitidas
+
+```
+EMERGENCY  ──safe answer──▶  SAFE
+EMERGENCY  ──user marks──▶   NEED_HELP
+NEED_HELP  ──safe answer──▶  SAFE
+```
+
+**No se permite** `SAFE → EMERGENCY`, ni `NEED_HELP → EMERGENCY`. Un `SAFE` es terminal hasta que llegue un nuevo `event_id`.
+
+### Quién puede emitir cada transición
+
+- **Origen** (el propio teléfono del afectado): puede pasar de `EMERGENCY` a `NEED_HELP` o a `SAFE` (con respuesta correcta).
+- **Dispositivo ZIRO autorizado** (familiar con ZIRO instalado y vinculado al `user_id`): puede pasar a `SAFE` en nombre del afectado. Esto cubre el caso "el teléfono quedó tirado". Ver `orphan-device.md`.
+- **Backend**: nunca emite transiciones por sí solo — solo refleja lo que recibe y notifica a la familia.
+
+### Modelo en el backend
+
+El **Emergency Orchestrator** (ver `api.md`) agrupa los telegramas por `user_id` y mantiene el estado actual. Prioridad de procesamiento:
+
+```
+NEED_HELP  >  EMERGENCY  >  SAFE
+```
+
+Un `NEED_HELP` siempre se entrega antes que un `EMERGENCY` aunque haya llegado después en el tiempo.
+
+## 5. Concurrencia y locks
 
 ### Lock por `id`
 Cuando un nodo recibe un telegrama, antes de procesarlo toma un lock sobre `id` para evitar que dos peers simultáneos disparen doble procesamiento:
@@ -176,7 +231,7 @@ suspend fun onTelegramReceived(t: Telegram) {
 ### Cola de envío por par
 Cada peer conectado tiene una cola FIFO. No se bloquea el procesamiento del siguiente par.
 
-## 5. Lo que NO hace el protocolo
+## 6. Lo que NO hace el protocolo
 
 - ❌ No hace enrutamiento (no es AODV, no es OSPF, no es B.A.T.M.A.N.).
 - ❌ No hace store-and-forward persistente multi-día (eso lo cubre el ledger).

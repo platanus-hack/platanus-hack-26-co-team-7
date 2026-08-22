@@ -1,28 +1,87 @@
 # api.md — Endpoints backend mínimos
 
-## Stack propuesto
+## Stack
 
 - **Node.js + Express** o **Python + FastAPI** — cualquiera sirve para 36h, lo que el equipo domine.
-- **WebSocket** para push al dashboard familiar en tiempo real.
-- **Storage:** SQLite (suficiente para demo) o PostgreSQL si el equipo prefiere.
+- Desplegado en **Render** (free tier alcanza para la demo).
+- **WebSocket** (`ws` en Node, `websockets` en Python) para push al dashboard familiar en tiempo real.
+- **Storage:** **SQLite** para la demo (suficiente, archivo plano, fácil de versionar). **PostgreSQL** queda como migración natural si crece — la columna `payload_json` cambia a `JSONB` y los índices se ajustan.
+- Componente propio: **Emergency Orchestrator** (ver sección dedicada abajo).
+
+## Emergency Orchestrator
+
+Componente central del backend. **No es un endpoint más — es el cerebro que decide qué pasa con cada telegrama que llega.**
+
+Responsabilidades:
+
+1. **Deduplicación por `id`** — rechazos idempotentes (replay-safe).
+2. **Agrupación por `user_id`** — varios telegramas del mismo afectado se consolidan en un único "caso".
+3. **Transiciones de estado de la persona** — aplica las reglas de la sección 4 de `protocol.md`:
+   - `EMERGENCY → SAFE` (con `answer_hash` válido)
+   - `EMERGENCY → NEED_HELP` (cualquier telegrama con status `NEED_HELP`)
+   - `NEED_HELP → SAFE` (con `answer_hash` válido)
+4. **Priorización de notificaciones** — al armar la cola para el dashboard y SMS, el orden es **NEED_HELP > EMERGENCY > SAFE**. Un `NEED_HELP` siempre se notifica antes aunque haya llegado después.
+5. **Validación de `answer_hash`** — único punto que compara el hash de una respuesta contra el que el usuario registró al configurar su perfil. Si coincide → transición a `SAFE`.
+6. **Cierre de eventos** — declara `event_id` cerrado cuando todas las personas pasaron a `SAFE` o cuando pasaron N horas desde el último telegrama nuevo. Avisa a los nodos para que programen el wipe a 72h.
+
+Implementación sugerida:
+
+```python
+class EmergencyOrchestrator:
+    def ingest(self, telegram: dict) -> IngestResult:
+        if self.known_ids.has(telegram["id"]):
+            return IngestResult.DUPLICATE
+        
+        case = self.cases.get(telegram["user_id"])
+        new_status = telegram["status"]
+        
+        # SAFE requiere answer_hash válido
+        if new_status == "SAFE":
+            if not self.verify_answer_hash(telegram):
+                return IngestResult.INVALID_VERIFICATION
+            case.close(telegram)
+        
+        # NEED_HELP pisa EMERGENCY (mayor prioridad)
+        if new_status == "NEED_HELP":
+            case.escalate(telegram)
+        
+        # nuevo EMERGENCY solo si no hay caso
+        if new_status == "EMERGENCY" and case is None:
+            case = self.cases.create(telegram)
+        
+        self.priority_queue.push(case, priority=self.priority_of(new_status))
+        self.known_ids.add(telegram["id"])
+        return IngestResult.OK
+```
+
+## Auto-gateway en el nodo (no en el backend)
+
+**El backend no hace polling.** Son los nodos los que, al detectar Internet, **flushean automáticamente** su ledger pendiente (ver Regla L6 en `ledger.md`). Esto significa:
+
+- No hay `POST /api/poll` ni nada similar — el backend solo recibe.
+- El backend responde `200` cuando acepta, `409` cuando es duplicado.
+- En caso de éxito, el nodo marca `sent = true` localmente y no reenvía más.
+
+Esta separación es importante: si el backend fuera el que pregunta "hay algo nuevo?", tendría que mantener estado por nodo y manejar timeouts. Con el modelo actual, el backend es **stateless respecto del flush**: solo procesa lo que llega.
 
 ## Modelo de datos
 
 ```sql
 CREATE TABLE messages (
-  id TEXT PRIMARY KEY,
-  event TEXT NOT NULL,
-  lat REAL NOT NULL,
-  lng REAL NOT NULL,
+  id TEXT PRIMARY KEY,                    -- UUID v4
+  user_id TEXT NOT NULL,                  -- identificador anónimo del afectado
+  event_id TEXT NOT NULL,                -- identificador del evento
+  payload_json TEXT NOT NULL,            -- telegrama completo serializado
+  status TEXT NOT NULL,                   -- EMERGENCY | NEED_HELP | SAFE
+  event TEXT NOT NULL,                    -- tipo (EARTHQUAKE, FIRE, etc.)
+  lat REAL,
+  lng REAL,
   ts INTEGER NOT NULL,
   severity INTEGER NOT NULL,
   hop INTEGER NOT NULL,
   origin TEXT NOT NULL,
-  person_name TEXT,
-  person_age INTEGER,
-  medical_note TEXT,
-  family_contact TEXT,
   received_at INTEGER NOT NULL,
+  closed_at INTEGER,                      -- cuándo se cerró el caso
   video_uploaded_at INTEGER,
   video_url TEXT
 );
@@ -39,12 +98,20 @@ CREATE TABLE message_path (
 CREATE TABLE families (
   id TEXT PRIMARY KEY,
   family_contact TEXT NOT NULL,
-  message_id TEXT NOT NULL,
-  last_notified_at INTEGER,
-  FOREIGN KEY (message_id) REFERENCES messages(id)
+  user_id TEXT NOT NULL,                  -- FK lógica al caso
+  token TEXT NOT NULL,                    -- para WebSocket
+  last_notified_at INTEGER
+);
+
+CREATE TABLE events (
+  event_id TEXT PRIMARY KEY,
+  closed_at INTEGER,                      -- null mientras esté abierto
+  closed_reason TEXT                      -- "ALL_SAFE" | "TIMEOUT" | "MANUAL"
 );
 
 CREATE INDEX idx_messages_received_at ON messages(received_at);
+CREATE INDEX idx_messages_user_id ON messages(user_id);
+CREATE INDEX idx_messages_event_id ON messages(event_id);
 CREATE INDEX idx_message_path_message_id ON message_path(message_id);
 CREATE INDEX idx_families_family_contact ON families(family_contact);
 ```
@@ -60,18 +127,23 @@ Recibe un telegrama del gateway. **Es el endpoint principal.**
 {
   "v": 1,
   "id": "a8f29c3f-7b9e-4a1d-8e2f-1c5b9d6e3f4a",
+  "user_id": "USER123",
+  "event_id": "EARTHQUAKE001",
   "event": "EARTHQUAKE",
-  "lat": 4.6097,
-  "lng": -74.0817,
-  "ts": 1787440000,
+  "name": "Juan Perez",
+  "blood": "O+",
+  "age": 35,
+  "medical_note": null,
+  "family_contact": "+57...",
+  "location": { "lat": 4.6097, "lng": -74.0817 },
+  "status": "EMERGENCY",
+  "question_id": "PET_NAME_42",
+  "answer_hash": "abcxyz...",
+  "timestamp": 1787440000,
   "severity": 3,
   "hop": 4,
   "ttl": 4,
-  "origin": "device_short_hash",
-  "person_name": "Juan Pérez",
-  "person_age": 35,
-  "medical_note": null,
-  "family_contact": "+57..."
+  "origin": "device_short_hash"
 }
 ```
 
@@ -80,7 +152,7 @@ Recibe un telegrama del gateway. **Es el endpoint principal.**
 {
   "id": "a8f29c3f-...",
   "received_at": 1787440123,
-  "status": "DELIVERED",
+  "status": "EMERGENCY",
   "hops": 4
 }
 ```
@@ -88,9 +160,10 @@ Recibe un telegrama del gateway. **Es el endpoint principal.**
 Lógica:
 1. Validar schema (zod / pydantic).
 2. Validar HMAC si está presente (descartar si inválido).
-3. INSERT en `messages` (idempotente por `id`).
-4. INSERT en `message_path` con el peer que trajo el mensaje.
-5. WebSocket broadcast a clientes suscritos a este `id` o `family_contact`.
+3. Pasar al **Emergency Orchestrator** (`orchestrator.ingest(payload)`). Este deduplica por `id`, agrupa por `user_id`, valida `answer_hash` si `status == "SAFE"`, y decide la prioridad.
+4. INSERT en `messages` (idempotente por `id`, lo hace el orchestrator).
+5. INSERT en `message_path` con el peer que trajo el mensaje.
+6. WebSocket broadcast a clientes suscritos a este `user_id` o `family_contact`.
 
 ### GET /api/messages/:id
 
@@ -100,8 +173,10 @@ La familia consulta el estado actual de un mensaje.
 // Response 200
 {
   "id": "a8f29c3f-...",
+  "user_id": "USER123",
+  "event_id": "EARTHQUAKE001",
   "event": "EARTHQUAKE",
-  "status": "DELIVERED",
+  "status": "EMERGENCY",
   "received_at": 1787440123,
   "video_uploaded_at": 1787441000,
   "video_url": "/storage/a8f29c3f.../video.mp4",
@@ -110,9 +185,10 @@ La familia consulta el estado actual de un mensaje.
   "origin": {
     "lat": 4.6097,
     "lng": -74.0817,
-    "ts": 1787440000,
-    "person_name": "Juan Pérez",
-    "person_age": 35
+    "timestamp": 1787440000,
+    "name": "Juan Perez",
+    "blood": "O+",
+    "age": 35
   }
 }
 ```

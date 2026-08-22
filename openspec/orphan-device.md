@@ -105,6 +105,54 @@ suspend fun onRescuerConnected(peerId: String) {
 }
 ```
 
+## Caso C5 — Familiar responde desde otro dispositivo autorizado
+
+Hay un quinto escenario que no encaja en C1-C4 y que vale la pena resolver explícitamente: **el teléfono del afectado no está disponible, pero otro dispositivo ZIRO de un familiar o contacto autorizado sí está operativo.**
+
+| Caso | Descripción | Cómo se resuelve |
+|---|---|---|
+| **C5 — Familiar con ZIRO responde en nombre** | El afectado no tiene su teléfono a mano (lo perdió, lo dejó, está inconsciente). Un familiar tiene ZIRO instalado y vinculado al `user_id` del afectado. | El familiar abre la app, elige "Confirmar en nombre de {nombre}", tipea la respuesta a `question_id`. La app emite un nuevo telegrama con `status: "SAFE"`, el mismo `user_id` y un `origin` distinto (el del familiar). El backend valida el `answer_hash` y cierra el caso. |
+
+### Por qué este caso importa
+
+Sin C5, la familia solo puede **esperar**. Con C5, la familia puede **actuar** aunque el afectado no responda. Es la diferencia entre "sabemos que Juan está perdido" y "Juan está bien, lo confirmó su mamá desde su teléfono".
+
+### Flujo técnico
+
+```
+1. Familiar A abre ZIRO en su teléfono.
+2. Va a "Contactos vinculados" → ve a Juan con estado EMERGENCY/NEED_HELP.
+3. Toca "Confirmar seguridad en nombre de Juan".
+4. La app le pregunta: "¿Cuál es la respuesta a '{question_id}'?"
+   (la pregunta ya viene pre-cargada del perfil de Juan).
+5. Familiar tipea la respuesta.
+6. La app hashea la respuesta (SHA-256) localmente.
+7. Emite un nuevo telegrama:
+   {
+     "v": 1,
+     "id": "<nuevo UUID>",
+     "user_id": "USER_JUAN",          ← mismo user_id que Juan
+     "event_id": "EARTHQUAKE001",    ← mismo evento
+     "status": "SAFE",
+     "question_id": "PET_NAME_42",
+     "answer_hash": "abcxyz...",      ← hash de la respuesta tipeada
+     "location": null,                ← el familiar no tiene la ubicación de Juan
+     "timestamp": ...,
+     "origin": "<hash del teléfono del familiar>"  ← distinto del origin de Juan
+   }
+8. Este telegrama viaja por la misma red mesh.
+9. El backend compara `answer_hash` con el que tenía registrado para Juan
+   en `EARTHQUAKE001`. Si coincide → Emergency Orchestrator transiciona
+   a SAFE y notifica a la familia.
+```
+
+### Garantías de seguridad
+
+- El **backend** es la única entidad que compara hashes. Un nodo mesh nunca ve la respuesta en claro.
+- El dispositivo autorizado tiene que haber sido **vinculado previamente** al `user_id` del afectado (no cualquier ZIRO puede responder por cualquiera). El vínculo se establece en la app con un código de invitación o QR antes del evento.
+- El `origin` del telegrama de respuesta queda registrado — si alguien abusa del mecanismo respondiendo SAFE fraudulentamente, queda auditado.
+- El telegrama de respuesta **no** incluye `location` (el familiar no la tiene necesariamente). El backend solo usa la `location` del último telegrama con `EMERGENCY/NEED_HELP` real.
+
 ## Tradeoffs reconocidos
 
 | Aspecto | Opción 2 (chunks pre-evac) | Opción 3 (detección abandono) | Patrón B (todo distribuido) |

@@ -1,5 +1,29 @@
 # communication.md — Capa radio: Google Nearby Connections
 
+## Dónde vive Nearby Connections (aclaración arquitectónica)
+
+Este es el punto más importante para entender ZIRO. **Nearby Connections vive en el teléfono, NO en el backend.**
+
+```
+ANDROID APP (cada teléfono)
+├── React Native (UI)
+├── Kotlin native module (Bluetooth, Wi-Fi, GPS, cámara, mic, foreground services)
+└── Nearby Connections API   ← vive acá, en el APK
+       │
+       ▼ (Bluetooth / Wi-Fi Direct)
+OTHER PHONES (peer-to-peer, sin Internet)
+
+Cuando algún nodo consigue Internet:
+Node → Internet → Backend Render (independiente, solo conoce la API HTTP/WS)
+```
+
+El backend **NO usa Nearby**. No sabe nada del grafo mesh. Cuando un nodo con Internet aparece, ese nodo toma su ledger local y lo postea por HTTP. El backend recibe JSON por API REST/WebSocket exactamente igual que si viniera de cualquier cliente.
+
+Esto mata el modelo mental incorrecto "Backend → Nearby → teléfonos". La realidad es **dos canales independientes**:
+
+1. **Phone → Nearby → Phone** (sin Internet, capa radio entre pares).
+2. **Phone + Internet → Backend Render** (canal saliente clásico HTTP/WS).
+
 ## Decisión de fondo
 
 ZIRO usa **Google Nearby Connections** como capa de transporte radio. **NO implementa Wi-Fi Direct ni BLE directamente**.

@@ -66,6 +66,24 @@ Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la ca
 - ✅ Rescatista offline ve la lista en pantalla en menos de 30s después de entrar al rango.
 - ✅ Pitch emocional de 30s al final.
 
+## Stack técnico de la app móvil
+
+| Capa | Tecnología | Por qué |
+|---|---|---|
+| UI + lógica de negocio | **React Native** | Reuso de JS, hot reload durante el hackatón, fácil de iterar |
+| Módulo nativo | **Kotlin** (dentro del mismo APK) | Acceso directo a Nearby Connections, Bluetooth, Wi-Fi, GPS, cámara, micrófono, foreground services |
+| Build | **Expo Development Build** (no Expo Go) | Expo Go no soporta módulos nativos custom; el dev build genera un APK con Kotlin adentro |
+| Distribución | **APK firmado** | Se instala a mano en los teléfonos de la demo sin Play Store |
+
+**Punto crítico:** Nearby Connections vive **dentro del APK de cada teléfono** — NO en el backend. Cada nodo Android corre la misma app y habla con sus pares por BT/Wi-Fi Direct. El backend es un observador pasivo que solo recibe cuando un nodo tiene Internet. Ver `communication.md` y `DECISIONS.md` para el detalle.
+
+## Stack del backend
+
+- **Node.js** o **Python** (lo que el equipo domine), desplegado en **Render**.
+- DB persistente: **SQLite** para la demo, **PostgreSQL** como migración natural si crece.
+- API HTTP + **WebSocket** para push al dashboard familiar.
+- Componente propio: **Emergency Orchestrator** — deduplica telegramas entrantes por `id`, agrupa por `user_id`, maneja transiciones de estado de la persona y prioriza `NEED_HELP > EMERGENCY > SAFE`. Ver `api.md`.
+
 ## Referencias y URLs verificadas
 
 - Bridgefy SDK: https://docs.bridgefy.me/sdk/start/bridgefy-sdk.md
