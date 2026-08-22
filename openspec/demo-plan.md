@@ -116,7 +116,7 @@ Tener screenshot/videos de respaldo por si algo falla.
 | Nearby Connections no descubre en 15s | Tener 2 teléfonos spare para reemplazar |
 | Battery se agota durante demo | Cargar todo al 100% 1h antes |
 | Backend se cae | Tener `docker-compose up` listo como backup local |
-| Red del会場 interfiere con Wi-Fi | Apagar Wi-Fi de los teléfonos, usar solo datos para el gateway |
+| Red del venue interfiere con Wi-Fi | **Desconectarse de la red del venue, NO apagar la radio.** Nearby necesita Bluetooth Y Wi-Fi PRENDIDOS: BLE para discovery, Wi-Fi Direct para el canal de datos. Ver `communication.md`. |
 | Dashboard no actualiza | Tener screenshot del estado esperado |
 | Alguien toca un teléfono y rompe la demo | Pegar los teléfonos a la mesa con cinta |
 

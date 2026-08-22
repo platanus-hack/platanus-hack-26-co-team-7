@@ -6,7 +6,7 @@
 
 ## Tesis central del proyecto (en una frase)
 
-**ZIRO** es una red de comunicación de emergencia que convierte los teléfonos Android en una **red temporal que se auto-enriquece** — cuando la infraestructura celular colapsa, transporta pequeños telegramas de emergencia (~120 bytes) entre dispositivos vía Wi-Fi Direct / BLE, sin Internet, y simultáneamente **va acumulando un registro distribuido de emergencias en cada nodo** que crece orgánicamente con cada interacción.
+**ZIRO** es una red de comunicación de emergencia que convierte los teléfonos Android en una **red temporal que se auto-enriquece** — cuando la infraestructura celular colapsa, transporta telegramas de emergencia chicos (~550-700 bytes) entre dispositivos vía Wi-Fi Direct / BLE, sin Internet, y simultáneamente **va acumulando un registro distribuido de emergencias en cada nodo** que crece orgánicamente con cada interacción.
 
 ---
 
@@ -35,8 +35,10 @@ No es B.A.T.M.A.N., no es cjdns, no es Yggdrasil. Es ferry de mensajes: A le pas
 ### 2. **Cada nodo acumula un ledger distribuido**
 Cuando A se encuentra con B, NO solo le pasa sus telegramas nuevos; **sincronizan sus bases completas** (metadata primero, después bytes). Esto convierte al nodo en un repositorio activo. **Caso de uso nuevo**: un rescatista con ZIRO offline puede ver la lista de personas reportadas en la zona sin Internet.
 
-### 3. **El telegrama es chico a propósito — ~120 bytes**
-La gracia NO es transferir archivos pesados por los nodos (eso es inviable en 36h). La gracia es que el telegrama cabe en una sola trama BLE/Wi-Fi Direct y se transmite en milisegundos. El video/audio se sube después por otro canal (lazy upload desde el origen).
+### 3. **El telegrama es chico a propósito — ~550-700 bytes**
+La gracia NO es transferir archivos pesados por los nodos (eso es inviable en 36h). La gracia es que el telegrama es data estructurada diminuta comparada con el handshake de Nearby (5-15 s), así que se transmite en milisegundos. El video/audio se sube después por otro canal (lazy upload desde el origen).
+
+**Corrección:** versiones anteriores decían "~120 bytes, cabe en una sola trama BLE". Eso era doctrina, no física — un advertisement BLE son 31 bytes, así que ni 200 bytes entraban. Nearby usa BLE solo para *discovery*; los payloads van por BT Classic / Wi-Fi Direct, con límite en KB. Con el bloque `vital` completo el telegrama pesa ~550-700 bytes y no hay problema técnico alguno. **El límite real es la privacidad, no el ancho de banda.**
 
 ### 4. **El origen se auto-protege**
 Si la persona tiene que irse y deja el teléfono, el origen **ya repartió los primeros 15-30 segundos del video entre los primeros 2-3 ZIRO que encontró** (Opción 2). Si queda solo, sigue transmitiendo un beacon BLE cada 60s (Opción 1). **La información nunca queda en un solo lugar.**
@@ -63,24 +65,38 @@ Matar cualquier versión del modelo "Backend → Nearby → teléfonos". Ver dia
 |---|---|---|---|
 | Capa radio | Google Nearby Connections | Abstrae Wi-Fi Direct + BLE, maneja discovery/auth/encriptación/re-connection | Bridgefy SDK (USENIX 2022 paper demostró MITM), Serval (abandonado desde 2016), Meshtastic (requiere hardware $30+), Wi-Fi Direct crudo (boilerplate pesado) |
 | **Dónde corre Nearby** | **En el APK de cada teléfono** (todo Kotlin, mismo proceso) | El backend no tiene radios. Solo puede recibir JSON por HTTP. | Backend → Nearby → teléfonos (arquitectura imposible, el backend no tiene BT/Wi-Fi Direct) |
-| **Stack móvil** | **Kotlin + Jetpack Compose, todo nativo Android (un solo APK)** | Toda la lógica offline (Nearby, SQLite, mesh, dedup, beacons, evidence chunks) vive en el APK. Sin cross-platform, sin UI compleja, sin justificación para meter JS. Un toolchain, un build, ~10 MB APK, sin bridge ni bundler. | RN + Kotlin module (complejidad sin beneficio en este alcance), XML layouts (verboso), Flutter (cross-platform innecesario), app web (fuera de scope) |
+| **Stack móvil** | **HÍBRIDO: Expo + React Native (UI) + módulo local Kotlin (motor), APK vía EAS Build** | **Fluidez del equipo, no arquitectura teórica.** El equipo ya sabe Expo y ya sabe generar la APK con EAS. En 36 h, la herramienta que ya sabés usar le gana a la teóricamente óptima: perder 3 h peleando con Gradle, `adb` y el SDK cuesta más que el impuesto del bridge. Bonus real: B trabaja en **Expo Go** con hot reload desde la hora 1, sin SDK y sin dev build. | Kotlin puro + Compose (ver reversión abajo), Expo Go solo (Nearby es nativo, no está en el cascarón), React Native puro (los wrappers de Nearby están sin mantener), Flutter, app web |
+| **Reparto del híbrido** | **Motor GORDO en Kotlin, UI flaca en JS** | **Restricción técnica, no estilo.** El hilo de JS de RN no está confiablemente vivo en background; un foreground service sí. Si dedup, HMAC o el ledger vivieran en JS, cada telegrama que llegue con la pantalla apagada se pierde — que es exactamente el caso de uso de ZIRO | "Kotlin como motor delgado, JS decide" (pierde telegramas en background) |
+| **Cómo se agrega el Kotlin** | **Módulo local de Expo** (`modules/ziro-relay/`, `expo-modules-core`) | Su `AndroidManifest.xml` se mergea solo durante `prebuild`, así que los permisos de Nearby y el `<service>` con `foregroundServiceType` viven versionados con el código que los necesita. **Cero config plugins.** Y `AsyncFunction` acepta `suspend` directo | TurboModule a mano (codegen, specs, JSI, glue de C++), config plugin a mano para los permisos |
+| **Formato del bridge** | **El bridge habla el MISMO JSON que la radio** | Un telegrama cruza como el string exacto de `TelegramCodec`. Elimina una tercera representación (`WritableMap`) y el lugar donde derivaría. El tipo TS espeja `protocol.md` directo | Mapear a `WritableMap` campo por campo (tres representaciones, dos lugares donde derivan) |
+| **Fuente de verdad en el bridge** | **El ledger de Kotlin. Los eventos son solo "algo cambió"** | El motor corre mientras JS duerme: los eventos de esa ventana se perdieron para siempre, el ledger no. `useRelay` relee `getLedger()` en vez de armar una lista en estado de React | Acumular la lista en JS (las dos vistas divergen) |
 | **Stack backend** | **Node.js (Express) o Python (FastAPI) en Render** | Lo que el equipo domine; Render free tier alcanza para la demo; SQLite/Postgres como storage | Go (menos familiar), serverless (cold start mata la latencia), Docker custom (overhead para 36h) |
-| Tamaño telegrama | JSON ~120-200 bytes | Debug fácil, no requiere librería externa | CBOR/MessagePack (no core, complejidad extra) |
+| Tamaño telegrama | JSON ~550-700 bytes | Debug fácil en logcat, no requiere librería externa. El límite de `Payload.fromBytes` está en KB | CBOR/MessagePack (no core, complejidad extra) |
 | Identificador mensaje | UUID v4 | Universal, no colisiona, clave de dedup | Hash incremental (rompe con resets) |
 | Identificador persona | `user_id` separado del `id` del mensaje | Varios telegramas del mismo afectado (EMERGENCY → NEED_HELP) comparten `user_id` pero tienen `id` distinto | Mezclar ambos (rompe dedup) |
 | Identificador evento | `event_id` (ej: `EARTHQUAKE001`) | Permite agrupar todos los afectados del mismo desastre en el backend | Sin event_id (no se puede hacer heatmap ni cierre de evento) |
 | Sincronización entre pares | Diff de IDs primero, bytes después | Minimiza payload (~1 KB metadata vs MB) | Flood completo (saturaría), gossip puro (más complejo) |
 | Límite del ledger local | TTL=0, ts>24h, LRU 5MB | Nodo no colapsa en desastre largo | Sin límite (DoS al propio nodo) |
-| **Memoria del nodo** | **SQLite local** (tablas `messages` + `hops` + `delivered_peers` + `evidence_chunks`) | JSON es solo transporte; SQLite es lo que se recuerda. Permite dedup, store-and-forward, auditoría del recorrido. | JSON crudo en archivos (sin queries, sin índices), solo en memoria (se pierde al reiniciar) |
+| **Memoria del nodo** | **SQLite local** (tablas `messages` + `hops` + `delivered_peers` + `evidence_chunks` + `profile` + `pending_wipes` + `events`) | JSON es solo transporte; SQLite es lo que se recuerda. Permite dedup, store-and-forward, auditoría del recorrido. | JSON crudo en archivos (sin queries, sin índices), solo en memoria (se pierde al reiniciar) |
 | **Encriptación local** | **SQLite plano para MVP demo, SQLCipher para producción** | Un teléfono abandonado no debe filtrar nombre, sangre ni ubicación. Migración drop-in (misma API). | Sin encriptación (riesgo privacidad), caja fuerte de Android (no aplica a SQLite de la app) |
-| **Auto-wipe post-evento** | **72h después de que el backend declara el evento cerrado, se borran campos sensibles (name, blood, age, medical_note, family_contact, location, question_id, answer_hash)**; se conservan id, user_id, event_id, timestamp para estadísticas | Minimiza ventana de exposición si el teléfono cae en malas manos | Borrado inmediato (rompería re-transmisión si hay peers lentos), nunca borrar (riesgo privacidad indefinido) |
+| **Auto-wipe post-evento** | **72h después de que el backend declara el evento cerrado, se borra el bloque `vital` completo (name, age, blood, allergies, conditions, medications, disability, pregnant), `location` y el bloque `verify`**; se conservan id, user_id, event_id, timestamp para estadísticas | Minimiza ventana de exposición si el teléfono cae en malas manos | Borrado inmediato (rompería re-transmisión si hay peers lentos), nunca borrar (riesgo privacidad indefinido) |
 | **Auto-gateway** | **Cuando un nodo detecta Internet, flushea automáticamente su ledger sin prompt** | En emergencia, latencia mata; cada segundo cuenta | Prompt "¿querés subir?" (fricción mata conversión), backend-pull (más complejo, stateful) |
 | Evidencia (video/audio) | Patrón C: telegrama rápido + upload perezoso del video | Defendible en 36h, honesto con el usuario | Patrón A (riesgo pérdida), Patrón B (complejidad brutal) |
 | **Estado del nodo** | 5 estados (IDLE/ADVERTISING/SYNC/RELAY/ORPHAN) — comportamiento de red | Maneja todos los casos incluyendo abandono | Sin estado (race conditions), 3 estados (insuficiente) |
 | **Estado de la persona** | **3 estados (EMERGENCY/NEED_HELP/SAFE)** — ortogonales a los del nodo | El comportamiento de la red (nodo) es independiente del estado del afectado (persona). NEED_HELP tiene prioridad sobre EMERGENCY. | Confundir ambos (rompe modelo mental, rompe lógica de prioridad en backend) |
 | **Verificación SAFE** | **`question_id` + `answer_hash`** en el telegrama; **la respuesta en claro nunca viaja por la red mesh**; el backend compara el hash | Si un atacante escucha la red, no ve respuestas. Compatible con C5 (familiar responde desde otro ZIRO). | Pregunta + respuesta en claro (filtra privacidad, ataque trivial al eavesdropping), comparación local en cada nodo (inconsistente, sin fuente única de verdad) |
-| Seguridad | HMAC-SHA256 con device_secret | Blinda MITM | Sin firma (riesgo USENIX 2022 sobre Bridgefy) |
 | Servicio de discovery | `serviceId = "ziro.relay.v1"` | Versionado, permite migración futura | Hardcoded sin versión |
+| **Arquitectura de la app** | **Hexagonal-lite, un solo módulo Gradle.** `domain/` + `ports/` sin imports de Android; `adapters/` afuera | El "contrato primero" del plan de 2 personas ya era un puerto sin nombre. Formalizarlo no agrega trabajo: da un lugar a las 3 piezas huérfanas (ledger compartido, máquina de estados, transport fake) y hace que los swaps de Fase 5 sean una línea | Estructura por dueño (`sender/`+`receiver/`: no tenía dónde vivir la lógica compartida, y la Fase 4 forzaba a A a tocar el código de B), Clean multi-módulo (1-2 h de Gradle antes del primer píxel, más KSP encima) |
+| **Inyección de dependencias** | **`AppContainer` manual** (`ZiroApp.kt`) | ~15 objetos no justifican KSP + plugin + 40 min de setup. Es también el único archivo que decide qué adapter es real y cuál fake | Hilt, Koin |
+| **Punto de mutación de `hop`/`ttl`** | **El receptor, al ingestar, una vez. El reenvío es verbatim** | Mutar en ingest Y en forward hace que `hop` cuente doble. Reenviar verbatim mantiene el HMAC válido de punta a punta | Mutar al reenviar (la versión anterior de `protocol.md` Regla 2 — se corrigió) |
+| **Canonical del HMAC** | **Excluye `hop`, `ttl` y `hmac`.** Orden de campos fijado a mano en `Canonical.kt` | `hop`/`ttl` cambian en cada nodo: si entran al canonical la firma solo valida en hop 0. Y delegar el canonical a un encoder JSON hace que un cambio de orden o de formato de número rompa la verificación del otro lado de la radio — y el fallo se ve como bug de transporte | Firmar el telegrama completo, usar el JSON serializado como canonical |
+| **Clave del HMAC** | **Una constante app-wide para MVP** (`HmacSha256Signer.MVP_SHARED_KEY`) | HMAC es simétrico: un verificador que no tiene la clave de firma rechaza el 100% de los telegramas. Un secret por dispositivo necesita intercambio de claves real (Fase 5) | `device_secret` derivado del origin (imposible de verificar por el receptor) |
+| **Campo `hmac` en v1** | **Existe desde v1, nullable en MVP** | Agregarlo después obliga a un `v=2` y rompe compatibilidad | Agregarlo cuando se implemente |
+| **Qué del perfil VIAJA** | **Solo el bloque `vital`** (nombre, edad, sangre, alergias, condiciones, medicación, discapacidad, embarazo) | Criterio único: ¿lo necesita un rescatista **sin Internet** para actuar en los próximos 10 minutos? | Mandar el perfil completo |
+| **Qué del perfil NO viaja** | **`doc_type`, `doc_number`, `eps`, `family_contact`, `device_secret`** | El backend ya los tiene del onboarding, indexados por `user_id`. `nombre + cédula + sangre + GPS` en el teléfono de un desconocido, en SQLite sin cifrar, es un kit de robo de identidad viajando por 8 saltos. Un rescatista no necesita la cédula para salvarte | `family_contact` en el telegrama (estaba en la versión anterior de `protocol.md` — se quitó) |
+| **Tamaño del telegrama** | **~550-700 bytes, y no es un problema** | Nearby no manda payloads por advertisements BLE (31 bytes): usa BLE para discovery y BT Classic / Wi-Fi Direct para datos, con límite en KB. El "~120 bytes" era doctrina, no física. El límite real es la privacidad, no el ancho de banda | Recortar campos vitales para bajar bytes |
+| **Lock de ingest** | **Un `Mutex` global del pipeline** | `Mutex.withLock(owner)` de kotlinx **no** hace locking por clave — el owner es solo tracking de propiedad. Llamarlo "lock por id" era mentira | `Map<String, Mutex>` (innecesario a estos volúmenes) |
+| Seguridad | HMAC-SHA256 sobre el canonical, verificado **antes** del dedup | Blinda MITM. Verificar antes de deduplicar evita que un telegrama falsificado ocupe un `id` y deje afuera al real | Sin firma (riesgo USENIX 2022 sobre Bridgefy), verificar después del dedup |
 
 ---
 
@@ -176,3 +192,61 @@ Estas decisiones vienen de una sesión de trabajo entre el equipo (vía OpenCode
 - ✅ `openspec/api.md` — backend endpoints
 - ✅ `openspec/demo-plan.md` — pitch 3 min para jueces
 - ✅ `openspec/DECISIONS.md` — este archivo
+
+## Estado del código
+
+Stack: **Expo + React Native + módulo local Kotlin**. Ver `bridge.md` para la frontera.
+
+### El motor (Kotlin) — `modules/ziro-relay/android/src/main/java/com/ziro/relay/`
+- ✅ `domain/` + `ports/` — el contrato, cero imports de Android
+- ✅ `application/` — IngestTelegram, SendTelegram, ForwardPending, RelayEngine
+- ✅ `adapters/` — bus, crypto, ledger (memoria), profile (hardcoded), fake (loopback)
+- ✅ `RelayContainer.kt` — DI manual, swap point marcado
+- ✅ `ZiroRelayModule.kt` — el bridge (5 funciones + 1 evento)
+- ✅ `src/main/AndroidManifest.xml` — permisos de Nearby + `<service>` tipado
+- ✅ `TelegramContractTest` — verifica que la firma sobrevive los 8 saltos
+- ⏳ `adapters/nearby/NearbyTransport.kt` — scaffold con TODOs, Fase 2 (A)
+- ⏳ `adapters/service/RelayForegroundService.kt` — scaffold con TODOs, Fase 2 (A)
+
+### El contrato TS — `modules/ziro-relay/`
+- ✅ `src/ZiroRelay.types.ts` — espejo del telegrama + `parseTelegram()` + `ContractDriftError`
+- ✅ `index.ts` — la cara JS del bridge
+
+### La UI (TypeScript) — `src/`
+- ✅ `native/relayClient.ts` — puerto JS + `USE_FAKE_ENGINE`
+- ✅ `native/fakeRelayClient.ts` — el fake que corre en Expo Go
+- ✅ `hooks/useRelay.ts` — el único punto donde la UI habla con el motor
+- ✅ `screens/HomeScreen.tsx` — baseline, crece en Fase 1-2 (B)
+
+### Sin verificar
+- ⚠️ **Nada está compilado ni instalado todavía.** Faltan `npm install`, `npx expo prebuild --platform android`, `npm run typecheck` y `npm run test:engine`. Las versiones de `package.json` (Expo SDK 52 / RN 0.76.5) hay que confirmarlas con `npx expo install --fix`.
+
+### Reversión documentada (2026-08-22): SÍ hay React Native
+
+El stack se decidió Kotlin puro, después se revirtió a híbrido. Queda escrito por qué, para que nadie lo re-discuta desde cero.
+
+**Los argumentos contra el híbrido siguen siendo ciertos**, y son el costo que se está pagando a conciencia:
+
+- Las 3 pantallas del MVP son ~150 líneas. La ventaja de RN aparece con 40 pantallas que iteran, no con 3.
+- La lista de "lo que queda en Kotlin" (Nearby, BT, GPS, foreground, ledger) **es el producto entero**. El ~85% del código es Kotlin igual.
+- **El contrato deja de estar verificado por el compilador.** En Kotlin puro, un rename rompía la build de B. En híbrido son dos declaraciones sincronizadas a mano y el fallo aparece en runtime.
+- En las Fases 0-3 el ~90% del trabajo es código nativo, y **cada cambio nativo necesita un dev client nuevo**: 10-20 min de EAS más cola.
+- Impuesto estimado: **+4 a 6 h** sobre una ruta crítica de ~8-10 h.
+
+**Lo que decidió la reversión** — y es el argumento que ganó legítimamente:
+
+> El equipo **ya sabe usar Expo y ya sabe generar la APK**. La estimación de +4-6 h asumía fluidez igual en los dos toolchains. No la hay. Si el equipo pierde 3 horas instalando el SDK, peleando con Gradle y con `adb`, la cuenta se da vuelta. **En una hackatón de 36 h, la fricción de aprender un toolchain nuevo es un costo real, no una excusa.**
+
+**Y hay dos beneficios que la primera evaluación no le acreditó:**
+
+1. **La frontera de lenguaje coincide con la frontera de persona.** A es dueño de todo el Kotlin, B de todo el TypeScript, y se encuentran en una API documentada de 5 funciones. Para dos personas con skills distintos, ese seam es más limpio que compartir un lenguaje y pisarse.
+2. **B puede trabajar en Expo Go**, con hot reload, sin SDK, sin dev build, sin teléfono emparejado, desde la hora 1. Con `USE_FAKE_ENGINE = true` la app entera corre en JS. Eso es un desbloqueo concreto, no teórico.
+
+**Lo que sobrevivió intacto de la etapa Kotlin puro:** todo `domain/`, `ports/`, `application/` y `adapters/`, más `TelegramContractTest`. El telegrama, `Canonical`, `RelayPolicy`, el HMAC y el ledger no cambiaron una línea — solo se movieron a `modules/ziro-relay/android/` y se les puso un bridge encima. **El trabajo fue aditivo, no un rewrite.**
+
+**Mitigaciones obligatorias del híbrido** (ver `bridge.md`):
+
+- Superficie del bridge chica: 5 funciones y 1 evento.
+- El bridge habla el mismo JSON que la radio.
+- `parseTelegram()` valida en el borde y tira `ContractDriftError` con la instrucción adentro.
+- **Regla dura: `domain/Telegram.kt` y `ZiroRelay.types.ts` se cambian en el MISMO commit.** Se verifica con `git log --name-only` en cada checkpoint.
