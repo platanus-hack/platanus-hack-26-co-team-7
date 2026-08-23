@@ -22,6 +22,7 @@ import com.ziro.relay.domain.RelayEnvelopeCodec
 import com.ziro.relay.ports.EventBus
 import com.ziro.relay.ports.PeerTransport
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
