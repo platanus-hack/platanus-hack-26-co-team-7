@@ -491,11 +491,14 @@ function RadioCheck() {
 function GatewaySyncPanel() {
   const client = createRelayClient();
   const [snapshot, setSnapshot] = useState<import('ziro-relay').GatewaySyncSnapshot | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const refreshSnapshot = async () => setSnapshot(await client.getGatewaySyncSnapshot());
   useEffect(() => { void refreshSnapshot(); }, []);
   const sync = async () => {
-    try { await client.scheduleGatewaySync(); await refreshSnapshot(); }
+    setSyncing(true);
+    try { await client.scheduleGatewaySync(); await refreshSnapshot(); Alert.alert('Sync scheduled', 'Gateway sync has been queued.'); }
     catch (error) { Alert.alert('Gateway sync failed', messageFor(error)); }
+    finally { setSyncing(false); }
   };
   return (
     <View style={shared.card}>
@@ -514,7 +517,7 @@ function GatewaySyncPanel() {
           {item.id.slice(0, 8)}: {gatewayOutcomeLabel(item.status, item.error)}
         </Text>
       ))}
-      <Action label="Sync private outbox" onPress={() => void sync()} />
+      <Action label={syncing ? 'Syncing...' : 'Sync private outbox'} onPress={() => void sync()} disabled={syncing} />
     </View>
   );
 }
