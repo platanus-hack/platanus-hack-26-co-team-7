@@ -472,6 +472,20 @@ function RegistrationForm({
           <FieldError message={errors.disability} />
         </Field>
 
+        <Field label="Weight (kg)">
+          <TextInput
+            style={shared.input}
+            value={profile.weightKg != null ? String(profile.weightKg) : ''}
+            onChangeText={(value) => {
+              const num = parseInt(value, 10);
+              onChange({ ...profile, weightKg: isNaN(num) ? null : num });
+            }}
+            keyboardType="numeric"
+            placeholder="Optional"
+            placeholderTextColor={C.textMuted}
+          />
+        </Field>
+
         <View style={shared.switchRow}>
           <Text style={shared.text}>Pregnant *</Text>
           <Switch

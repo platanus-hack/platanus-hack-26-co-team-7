@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    stream=sys.stderr,
+    force=True,
+)
 
 from fastapi import FastAPI, WebSocket
 from scalar_fastapi import get_scalar_api_reference

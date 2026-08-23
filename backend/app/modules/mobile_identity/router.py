@@ -118,7 +118,9 @@ def register(payload: RegisterRequest, session: Session = Depends(get_session)) 
         session.commit()
     except IntegrityError as error:
         session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document or device identity is already registered.") from error
+        import logging
+        logging.getLogger(__name__).error("Registration IntegrityError: %s", error.orig, exc_info=True)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Registration conflict: {error.orig}") from error
     return profile_response(person, session.execute(
         select(MobileEmergencyContact).where(MobileEmergencyContact.user_id == user_id)
     ).scalars().all())
