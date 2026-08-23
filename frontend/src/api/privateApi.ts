@@ -8,6 +8,33 @@ export interface PublicDashboardSummary { heatmapCells: number; reports: Array<{
 interface TokenResponse { access_token: string; refresh_token: string; expires_in: number; }
 interface ApiProfile { user_id: string; full_name: string; doc_type: ProfileInput['docType']; doc_number: string; birth_date: string; blood_type: ProfileInput['bloodType']; blood_rh: ProfileInput['bloodRh']; allergies: string[]; chronic_conditions: string[]; medications: string[]; disability: ProfileInput['disability']; is_pregnant: boolean; weight_kg: number | null; eps: string | null; emergency_contacts: ProfileInput['emergencyContacts']; question_id: string; answer_hash: string; }
 
+const FIELD_LABELS: Record<string, string> = {
+  emergency_contacts: 'Emergency contacts',
+  blood_type: 'Blood type',
+  blood_rh: 'Rh factor',
+  doc_type: 'Document type',
+  doc_number: 'Document number',
+  birth_date: 'Birth date',
+  full_name: 'Full name',
+  chronic_conditions: 'Chronic conditions',
+  is_pregnant: 'Pregnant',
+  weight_kg: 'Weight',
+  question_id: 'Verification question',
+  answer_hash: 'Identity answer',
+  device_identity: 'Device identity',
+};
+
+function friendlyApiError(status: number, _body: string): string {
+  switch (status) {
+    case 401: return 'Invalid credentials. Please check your email and password.';
+    case 403: return 'Access denied. Your session may have expired.';
+    case 404: return 'Resource not found.';
+    case 409: return 'This account already exists. Try logging in instead.';
+    case 500: return 'Server error. Please try again later.';
+    default: return `Request failed (${status}). Please try again.`;
+  }
+}
+
 export class PrivateApi {
   private refreshPromise: Promise<SecureSession | null> | null = null;
   private readonly baseUrl: string;
@@ -39,11 +66,11 @@ export class PrivateApi {
   private async tokens(path: string, body: unknown): Promise<void> { const response = await this.request<TokenResponse>(path, { method: 'POST', body: JSON.stringify(body), authenticated: false }); await this.relay.saveSession({ accessToken: response.access_token, refreshToken: response.refresh_token, expiresIn: response.expires_in }); }
   private async refresh(): Promise<SecureSession | null> { if (!this.refreshPromise) this.refreshPromise = (async () => { const current = await this.relay.loadSession(); if (!current) return null; try { await this.tokens('/auth/refresh', { refresh_token: current.refreshToken }); return this.relay.loadSession(); } catch { await this.relay.clearSession(); return null; } finally { this.refreshPromise = null; } })(); return this.refreshPromise; }
   private async profileBody(profile: ProfileInput): Promise<Omit<ApiProfile, 'user_id'>> { const answerHash = profile.identityAnswer ? this.relay.hashIdentityAnswer(profile.identityAnswer) : profile.answerHash; if (!answerHash) throw new Error('A SAFE answer is required when creating or changing the verification answer.'); return { full_name: profile.fullName, doc_type: profile.docType, doc_number: profile.docNumber, birth_date: profile.birthDate, blood_type: profile.bloodType, blood_rh: profile.bloodRh, allergies: profile.allergies, chronic_conditions: profile.chronicConditions, medications: profile.medications, disability: profile.disability, is_pregnant: profile.isPregnant, weight_kg: profile.weightKg, eps: profile.eps, emergency_contacts: profile.emergencyContacts.map((c) => ({ ...c, phone: c.phone.replace(/[\s\-()]/g, '') })) as ProfileInput['emergencyContacts'], question_id: profile.questionId, answer_hash: answerHash }; }
-  private async request<T>(path: string, init: RequestInit & { authenticated?: boolean } = {}): Promise<T> { const session = init.authenticated === false ? null : await this.relay.loadSession(); const response = await fetch(`${this.baseUrl}/api/v1/private${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}), ...init.headers } }); if (!response.ok) { const text = await response.text(); if (response.status === 422) { try { const body = JSON.parse(text) as { detail?: Array<{ loc?: string[]; msg?: string }> }; if (Array.isArray(body.detail)) { const msgs = body.detail.map((d) => `${d.loc?.at(-1) ?? 'field'}: ${d.msg ?? 'invalid'}`); throw new Error(msgs.join('\n')); } } catch (e) { if (e instanceof Error && !e.message.startsWith('API')) throw e; } } throw new Error(`API ${response.status}: ${text}`); } return response.status === 204 ? undefined as T : await response.json() as T; }
+  private async request<T>(path: string, init: RequestInit & { authenticated?: boolean } = {}): Promise<T> { const session = init.authenticated === false ? null : await this.relay.loadSession(); const response = await fetch(`${this.baseUrl}/api/v1/private${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}), ...init.headers } }); if (!response.ok) { const text = await response.text(); if (response.status === 422) { try { const body = JSON.parse(text) as { detail?: Array<{ loc?: string[]; msg?: string }> }; if (Array.isArray(body.detail)) { const msgs = body.detail.map((d) => { const fieldRaw = d.loc?.at(-1) ?? 'field'; const fieldLabel = FIELD_LABELS[fieldRaw] ?? fieldRaw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()); return `${fieldLabel}: ${d.msg ?? 'invalid'}`; }); throw new Error(msgs.join('\n')); } } catch (e) { if (e instanceof SyntaxError) { /* fall through to friendlyApiError */ } else { throw e; } } } throw new Error(friendlyApiError(response.status, text)); } return response.status === 204 ? undefined as T : await response.json() as T; }
 }
 
 function mapProfile(profile: ApiProfile): ProfileInput { return { userId: profile.user_id, fullName: profile.full_name, docType: profile.doc_type, docNumber: profile.doc_number, birthDate: profile.birth_date, bloodType: profile.blood_type, bloodRh: profile.blood_rh, allergies: profile.allergies, chronicConditions: profile.chronic_conditions, medications: profile.medications, disability: profile.disability, isPregnant: profile.is_pregnant, weightKg: profile.weight_kg, eps: profile.eps, emergencyContacts: profile.emergency_contacts, questionId: profile.question_id, answerHash: profile.answer_hash }; }
-function isUnauthorized(error: unknown): boolean { return error instanceof Error && error.message.startsWith('API 401:'); }
+function isUnauthorized(error: unknown): boolean { return error instanceof Error && (error.message.startsWith('Invalid credentials') || error.message.startsWith('API 401:')); }
 function toApiDeviceIdentity(relay: RelayClient): { key_id: string; public_key: string; binding_proof: string } { const identity = relay.getDeviceIdentity(); return { key_id: identity.keyId, public_key: identity.publicKey, binding_proof: identity.bindingProof }; }
 async function readPublicJson(response: Response): Promise<Record<string, unknown>> { if (!response.ok) throw new Error(`Public dashboard ${response.status}.`); const value: unknown = await response.json(); if (typeof value !== 'object' || value === null) throw new Error('Public dashboard returned an invalid response.'); return value as Record<string, unknown>; }
 function publicReport(value: unknown): { title: string; summary: string } | null { if (typeof value !== 'object' || value === null) return null; const report = value as Record<string, unknown>; const content = report.content; if (typeof content !== 'object' || content === null) return null; const parsed = content as Record<string, unknown>; return typeof parsed.title === 'string' && typeof parsed.summary === 'string' ? { title: parsed.title, summary: parsed.summary } : null; }

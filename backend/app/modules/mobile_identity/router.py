@@ -11,7 +11,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -85,28 +85,19 @@ def _valid_device_binding(key_id: str, public_key: str, binding_proof: str) -> b
 
 
 def _bind_device_identity(session: Session, user_id: str, key_id: str, public_key: str, binding_proof: str) -> None:
-    """Create or idempotently confirm an immutable, proof-of-possession device binding."""
+    """Create or idempotently confirm a device binding. Multiple users may share a device."""
     normalized_key_id = key_id.lower()
     if not _valid_device_binding(normalized_key_id, public_key, binding_proof):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device identity proof is invalid.")
-    identities = session.execute(
+    existing = session.execute(
         select(DeviceIdentity).where(
-            or_(DeviceIdentity.key_id == normalized_key_id, DeviceIdentity.public_key == public_key)
+            DeviceIdentity.key_id == normalized_key_id,
+            DeviceIdentity.user_id == user_id,
         )
-    ).scalars().all()
-    if not identities:
-        session.add(DeviceIdentity(user_id=user_id, key_id=normalized_key_id, public_key=public_key))
+    ).scalars().first()
+    if existing is not None:
         return
-    if len(identities) != 1:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Device identity is already registered.")
-    identity = identities[0]
-    if (
-        identity.user_id == user_id
-        and identity.key_id == normalized_key_id
-        and identity.public_key == public_key
-    ):
-        return
-    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Device identity is already registered.")
+    session.add(DeviceIdentity(user_id=user_id, key_id=normalized_key_id, public_key=public_key))
 
 
 @auth_router.post("/register", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)

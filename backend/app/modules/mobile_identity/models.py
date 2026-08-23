@@ -110,6 +110,6 @@ class DeviceIdentity(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        UniqueConstraint("public_key", name="uq_mobile_identity_device_identities_public_key"),
+        UniqueConstraint("user_id", "key_id", name="uq_mobile_identity_device_identities_user_key"),
         Index("ix_mobile_identity_device_identities_user_id", "user_id"),
     )

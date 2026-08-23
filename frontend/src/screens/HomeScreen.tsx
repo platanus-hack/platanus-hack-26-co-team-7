@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   BLOOD_RH,
   BLOOD_TYPES,
@@ -144,6 +145,7 @@ export function HomeScreen({ onProfileSave, onLogout, api, showDemoTrigger, emer
     try {
       await relay.sendTelegram(telegramDraft);
       setTelegramDraft(DEFAULT_DRAFT);
+      Alert.alert('Telegram sent', 'Your telegram has been queued.');
       setTab(TABS.INBOX);
     } catch (error: unknown) {
       Alert.alert('Could not queue telegram', messageFor(error));
@@ -752,6 +754,8 @@ function OwnCard({ telegrams, deliveries }: OwnCardProps) {
 
 interface ProfileFormProps { draft: ProfileInput | null; onChange: (profile: ProfileInput) => void; onSave: () => void; }
 function ProfileForm({ draft, onChange, onSave }: ProfileFormProps) {
+  const [showIdentityAnswer, setShowIdentityAnswer] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   if (!draft) return (
     <View style={s.content}>
       <Text style={shared.textSecondary}>Loading private profile…</Text>
@@ -787,11 +791,30 @@ function ProfileForm({ draft, onChange, onSave }: ProfileFormProps) {
         value={draft.docNumber}
         onChangeText={(docNumber) => onChange({ ...draft, docNumber })}
       />
-      <Field
-        label="Birth date (YYYY-MM-DD) *"
-        value={draft.birthDate}
-        onChangeText={(birthDate) => onChange({ ...draft, birthDate })}
-      />
+      <View style={{ gap: 6 }}>
+        <Text style={shared.label}>Birth date *</Text>
+        <Pressable onPress={() => setShowDatePicker(true)} style={shared.input}>
+          <Text style={{ color: draft.birthDate ? C.text : C.textMuted, fontFamily: 'Inter_400Regular', fontSize: 15 }}>
+            {draft.birthDate || 'Select date'}
+          </Text>
+        </Pressable>
+        {showDatePicker && (
+          <DateTimePicker
+            value={draft.birthDate ? new Date(draft.birthDate + 'T00:00:00') : new Date(2000, 0, 1)}
+            mode="date"
+            maximumDate={new Date(Date.now() - 86400000)}
+            onChange={(_, date) => {
+              setShowDatePicker(Platform.OS === 'ios');
+              if (date) {
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                onChange({ ...draft, birthDate: `${y}-${m}-${d}` });
+              }
+            }}
+          />
+        )}
+      </View>
       <Choice
         label="Blood group"
         value={draft.bloodType}
@@ -850,12 +873,22 @@ function ProfileForm({ draft, onChange, onSave }: ProfileFormProps) {
         value={contact.name}
         onChangeText={(value) => setContact('name', value)}
       />
-      <Field
-        label="Emergency contact phone *"
-        value={contact.phone}
-        keyboardType="phone-pad"
-        onChangeText={(value) => setContact('phone', value)}
-      />
+      <View style={{ gap: 6 }}>
+        <Text style={shared.label}>Emergency contact phone *</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={[shared.input, { paddingHorizontal: 10, justifyContent: 'center', borderTopRightRadius: 0, borderBottomRightRadius: 0 }]}>
+            <Text style={{ color: C.text }}>+57</Text>
+          </View>
+          <TextInput
+            style={[shared.input, { flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }]}
+            value={contact.phone.startsWith('+57') ? contact.phone.slice(3) : contact.phone}
+            onChangeText={(val) => setContact('phone', val ? `+57${val}` : '')}
+            keyboardType="phone-pad"
+            placeholderTextColor={C.textMuted}
+            placeholder="3001234567"
+          />
+        </View>
+      </View>
       <Field
         label="Emergency contact relationship *"
         value={contact.relationship}
@@ -866,12 +899,22 @@ function ProfileForm({ draft, onChange, onSave }: ProfileFormProps) {
         value={draft.questionId}
         onChangeText={(questionId) => onChange({ ...draft, questionId })}
       />
-      <Field
-        label="New identity answer (only to change it)"
-        value={draft.identityAnswer ?? ''}
-        secureTextEntry
-        onChangeText={(identityAnswer) => onChange({ ...draft, identityAnswer })}
-      />
+      <View style={{ gap: 6 }}>
+        <Text style={shared.label}>New identity answer (only to change it)</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TextInput
+            style={[shared.input, { flex: 1 }]}
+            value={draft.identityAnswer ?? ''}
+            secureTextEntry={!showIdentityAnswer}
+            onChangeText={(identityAnswer) => onChange({ ...draft, identityAnswer })}
+            placeholderTextColor={C.textMuted}
+            placeholder="Optional"
+          />
+          <Pressable onPress={() => setShowIdentityAnswer(!showIdentityAnswer)} style={{ paddingHorizontal: 10 }}>
+            <Text style={{ fontSize: 18 }}>{showIdentityAnswer ? '👁' : '🔒'}</Text>
+          </Pressable>
+        </View>
+      </View>
       <Action label="Save private profile" onPress={onSave} />
     </ScrollView>
   );
@@ -899,7 +942,7 @@ function Choice<T extends string>({ label, value, options, onChange }: ChoicePro
             style={[shared.chip, value === opt && shared.chipActive]}
             onPress={() => onChange(opt)}
           >
-            <Text style={value === opt ? shared.chipTextActive : shared.chipText}>{opt}</Text>
+            <Text style={value === opt ? shared.chipTextActive : shared.chipText}>{enumLabel(opt)}</Text>
           </Pressable>
         ))}
       </View>
@@ -937,6 +980,18 @@ function StatusBadge({ status }: { status: string }) {
       <Text style={{ fontFamily: F.bold, color, fontSize: 11, letterSpacing: 0.5 }}>{status.replace('_', ' ')}</Text>
     </View>
   );
+}
+
+function enumLabel(value: string): string {
+  const MAP: Record<string, string> = {
+    POSITIVE: 'Rh+',
+    NEGATIVE: 'Rh-',
+    NONE: 'None',
+    EMERGENCY: 'Emergency',
+    NEED_HELP: 'Need Help',
+    SAFE: 'Safe',
+  };
+  return MAP[value] ?? value;
 }
 
 function validateTelegram(draft: TelegramDraft): string | null { if (!draft.eventId.trim()) return 'Event identifier is required.'; if (draft.location !== null) { if (!Number.isFinite(draft.location.lat) || draft.location.lat < -90 || draft.location.lat > 90) return 'Latitude must be between -90 and 90.'; if (!Number.isFinite(draft.location.lng) || draft.location.lng < -180 || draft.location.lng > 180) return 'Longitude must be between -180 and 180.'; } return null; }
