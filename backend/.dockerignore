@@ -8,8 +8,15 @@ venv/
 build/
 dist/
 
-# Local env (never bake secrets into the image)
+# Local environment and secrets (never bake into the image)
 .env
+.env.*
+*.env
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
 
 # Git
 .git/
@@ -20,7 +27,15 @@ dist/
 .idea/
 .DS_Store
 
-# Test / logs
+# Tests, generated artifacts, and logs
+tests/
+test/
+artifacts/
+reports/
+.coverage
+coverage/
+htmlcov/
 .pytest_cache/
 .mypy_cache/
+*.coverage
 *.log
