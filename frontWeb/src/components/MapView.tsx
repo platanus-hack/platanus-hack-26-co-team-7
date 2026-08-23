@@ -118,8 +118,7 @@ export default function MapView({ cells }: MapViewProps) {
                     <span style="display:inline-block;width:6px;height:6px;border-radius:9999px;background:${intensityRgb(info.object.intensity)}"></span>
                     <span style="letter-spacing:0.18em;text-transform:uppercase;font-size:0.6875rem;color:#8b8781">Riesgo ${riskLabel(info.object.intensity)}</span>
                   </div>
-                  <b style="font-size:0.95rem;font-weight:600">${info.object.person_count}</b> <span style="color:#8b8781">personas en peligro</span><br/>
-                  <span style="color:#5c5a55">intensidad ${info.object.intensity.toFixed(1)} / 10</span>`,
+                  <b style="font-size:0.95rem;font-weight:600">${info.object.person_count}</b> <span style="color:#8b8781">personas en peligro</span>`,
                 style: {
                   backgroundColor: "#121211",
                   color: "#e9e5de",
@@ -136,10 +135,10 @@ export default function MapView({ cells }: MapViewProps) {
 
       <div className="pointer-events-none absolute bottom-3 left-3 rounded-card border border-hairline bg-void/90 px-3 py-2.5 shadow-card backdrop-blur-sm">
         <div className="label-mono mb-2 flex items-center gap-1.5 text-ash-dim">
-          Intensidad
+          Riesgo
           <span
             className="pointer-events-auto cursor-help"
-            title="Concentración ponderada de personas en peligro por celda H3 (~500 m), 0–10"
+            title="Nivel de riesgo por zona, según la concentración de personas en peligro"
           >
             ⓘ
           </span>
@@ -149,9 +148,9 @@ export default function MapView({ cells }: MapViewProps) {
           style={{ background: `linear-gradient(to right, ${LEGEND_GRADIENT})` }}
         />
         <div className="label-mono mt-2 flex justify-between gap-3 text-ash-dim">
-          <span>0 Bajo</span>
-          <span>5 Medio</span>
-          <span>10 Alto</span>
+          <span>Bajo</span>
+          <span>Medio</span>
+          <span>Alto</span>
         </div>
       </div>
 

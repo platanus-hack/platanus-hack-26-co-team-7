@@ -41,7 +41,7 @@ export const FALLBACK_REPORTS: Report[] = [
     content: fallbackContent(
       "Reporte manual del coordinador — cierre parcial de zonas",
       "El coordinador marca la zona norte como estabilizada. Persisten focos de atención al sur-occidente; se recomienda mantener el evento abierto hasta su verificación.",
-      ["Mantener el evento abierto hasta confirmar SAFE en los focos activos."],
+      ["Mantener el evento abierto hasta confirmar la situación en los focos activos."],
       { cells_active: 15, people_helped: 51 },
     ),
   },
@@ -52,8 +52,8 @@ export const FALLBACK_REPORTS: Report[] = [
     generated_at: "2026-08-22T12:45:00Z",
     content: fallbackContent(
       "Evolución a los 45 minutos: focos activos y estabilización",
-      "La intensidad decrece en la mayoría de celdas respecto a la primera ventana. Dos focos permanecen con conteo creciente de telegrams.",
-      ["Redirigir brigadas a los dos focos con tendencia creciente.", "Confirmar estado SAFE de las personas marcadas NEED_HELP."],
+      "La actividad disminuye en la mayoría de zonas respecto a la primera hora. Dos focos permanecen con un aumento sostenido de personas en peligro.",
+      ["Redirigir brigadas a los dos focos con tendencia creciente.", "Confirmar el estado de las personas aún reportadas como en peligro."],
       { cells_active: 15, people_helped: 34 },
     ),
   },
@@ -64,8 +64,8 @@ export const FALLBACK_REPORTS: Report[] = [
     generated_at: "2026-08-22T12:15:00Z",
     content: fallbackContent(
       "Sismo M5.6 en Bogotá — evaluación inicial",
-      "Se registran múltiples reportes desde el centro de Bogotá. Las celdas con mayor intensidad se concentran alrededor del centro y la zona sur-occidental.",
-      ["Priorizar la verificación de personas atrapadas en las celdas de intensidad alta.", "Mantener abiertos los corredores de evacuación hacia el norte."],
+      "Se registran múltiples reportes desde el centro de Bogotá. Las zonas más afectadas se concentran alrededor del centro y la zona sur-occidental.",
+      ["Priorizar la verificación de personas en las zonas más afectadas.", "Mantener abiertos los corredores de evacuación hacia el norte."],
       { cells_active: 15, people_helped: 18 },
     ),
   },

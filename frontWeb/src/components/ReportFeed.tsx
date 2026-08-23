@@ -1,6 +1,14 @@
 import { useState } from "react";
 import type { Report } from "../lib/types";
 
+/** Internal figures schema keys → human-readable Spanish labels. */
+const FIGURE_LABELS: Record<string, string> = {
+  cells_active: "Zonas afectadas",
+  people_in_danger: "Personas en peligro",
+  gov_actions_count: "Acciones gestionadas",
+  people_helped: "Personas atendidas",
+};
+
 /**
  * AI report feed (spec dashboard-web-ui): the most recent report is always
  * highlighted; older reports stay accessible in a collapsible list.
@@ -102,7 +110,7 @@ function ReportCard({ report, highlighted }: { report: Report; highlighted?: boo
               key={key}
               className="label-mono rounded-card border border-hairline px-2 py-1.5 text-ash-dim"
             >
-              {key}{" "}
+              {FIGURE_LABELS[key] ?? key}{" "}
               <strong className="font-mono-figures font-semibold tabular-nums tracking-normal text-bone">
                 {value}
               </strong>
