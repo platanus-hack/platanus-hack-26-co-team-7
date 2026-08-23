@@ -50,10 +50,13 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     await relay.scheduleGatewaySync();
     setEmergencyStatus('Native gateway sync scheduled.');
   };
+  const emergencyActivated = useRef(false);
   const reconcileActiveEvents = async () => {
+    if (emergencyActivated.current) return;
     const events = await api.activeEvents();
     const event = events.at(0);
     if (!event) return;
+    emergencyActivated.current = true;
     setEmergencyStatus(`Event detected: ${event.eventId} revision ${event.revision}.`);
     try { await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision }); } catch { /* native relay may not be available */ }
     try { await relay.start(); } catch { /* auto-start relay on emergency */ }
@@ -77,6 +80,7 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     try {
       setEmergencyStatus('Trigger requested.');
       const event = await api.activateDemoEvent(activationKey.current);
+      emergencyActivated.current = true;
       setEmergencyStatus(`Event detected: ${event.eventId} revision ${event.revision}.`);
       try { await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision }); } catch { /* native relay may not be available in demo */ }
       try { await relay.start(); } catch { /* auto-start relay on emergency */ }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   BLOOD_RH,
@@ -315,6 +315,8 @@ function PermissionSetupModal({ relay, visible, onDismiss }: PermissionSetupModa
 
 interface RelayPanelProps { relay: ReturnType<typeof useRelay>; api: PrivateApi | null; showDemoTrigger: boolean; emergencyStatus: string; onTriggerDemo: () => void; }
 function RelayPanel({ relay, api, showDemoTrigger, emergencyStatus, onTriggerDemo }: RelayPanelProps) {
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 1000); }, []);
   const permissionsGranted = allRequiredPermissionsGranted(relay.permissions);
 
   const allTelegrams = [...relay.inbox, ...relay.outbox];
@@ -326,7 +328,7 @@ function RelayPanel({ relay, api, showDemoTrigger, emergencyStatus, onTriggerDem
   const peerDots = Array.from({ length: 4 }, (_, i) => i < relay.peerCount);
 
   return (
-    <ScrollView contentContainerStyle={s.content}>
+    <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={C.accent} colors={[C.accent]} />}>
       <View style={shared.card}>
         <Text style={shared.label}>Local emergency reports</Text>
         <View style={s.statsRow}>
@@ -601,6 +603,8 @@ function InboxPanel({ telegrams, onSafeResponse }: InboxPanelProps) {
   const [selected, setSelected] = useState<LedgerEntry | null>(null);
   const [showCoordinates, setShowCoordinates] = useState(false);
   const [answer, setAnswer] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 1000); }, []);
   const safe = async () => {
     if (!selected || !answer.trim()) return Alert.alert('SAFE answer required', 'Ask the nearby person and enter their answer.');
     try {
@@ -613,7 +617,7 @@ function InboxPanel({ telegrams, onSafeResponse }: InboxPanelProps) {
   };
 
   return (
-    <ScrollView contentContainerStyle={s.content}>
+    <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} colors={[C.accent]} />}>
       <Text style={shared.label}>Telegrams stored locally</Text>
 
       {telegrams.length === 0 ? (
