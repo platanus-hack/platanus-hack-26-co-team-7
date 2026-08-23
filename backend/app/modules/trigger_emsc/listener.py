@@ -23,7 +23,8 @@ import websockets
 
 from app.core.config import Settings, settings
 from app.core.ws import ConnectionManager, manager
-from app.models.event import Event, EventType
+from app.models.event import EventType
+from app.modules.event_activation.service import activate_event
 
 logger = logging.getLogger(__name__)
 
@@ -150,21 +151,20 @@ async def handle_message(
     try:
         import sqlalchemy as sa
 
-        exists = session.execute(
-            sa.select(Event.event_id).where(Event.event_id == str(unid))
-        ).scalar_one_or_none()
-        if exists is not None:
+        with session.begin():
+            result = activate_event(
+                session,
+                event_id=str(unid),
+                event_type=EventType.EARTHQUAKE,
+                occurred_at=occurred,
+                source="emsc",
+                source_key=str(unid),
+                actor_id=None,
+                audit_metadata={"mag": payload.get("mag"), "region": payload.get("flynn_region")},
+            )
+        if not result.created:
             logger.info("trigger_emsc: duplicate unid=%s, skipping", unid)
             return "skipped_dup"
-
-        event = Event(
-            event_id=str(unid),
-            event_type=EventType.EARTHQUAKE,
-            occurred_at=occurred,
-            closed_at=None,
-        )
-        session.add(event)
-        session.commit()
     except Exception:  # noqa: BLE001 - log and continue, never crash the app
         logger.exception("trigger_emsc: failed to persist unid=%s", unid)
         session.rollback()

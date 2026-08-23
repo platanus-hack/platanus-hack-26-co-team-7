@@ -24,7 +24,7 @@ class IngestTelegram(
     private val ledger: TelegramLedger,
     private val signer: Signer,
     private val bus: EventBus,
-    /** MVP accepts unsigned telegrams. Flip to false once HMAC lands on both sides. */
+    /** Legacy HMAC telegrams are retained only when already local; new radio ingest needs v2 proof. */
     private val allowUnsigned: Boolean = true,
 ) {
 
@@ -68,7 +68,7 @@ class IngestTelegram(
     }
 
     private fun isSignatureAcceptable(t: Telegram): Boolean = when {
-        t.hmac != null -> signer.verify(t)
+        t.v == Telegram.PROTOCOL_VERSION && t.keyId != null && t.publicKey != null && t.signature != null -> signer.verify(t)
         else -> allowUnsigned
     }
 

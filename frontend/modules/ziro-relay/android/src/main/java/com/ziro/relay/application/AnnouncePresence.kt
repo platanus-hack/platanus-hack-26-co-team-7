@@ -7,6 +7,7 @@ import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.ports.EventBus
 import com.ziro.relay.ports.LocationSource
+import com.ziro.relay.adapters.emergency.ActiveEmergency
 
 /**
  * Meeting someone IS the moment to ask for help.
@@ -32,7 +33,7 @@ class AnnouncePresence(
     private val sendTelegram: SendTelegram,
     private val location: LocationSource,
     private val bus: EventBus,
-    private val eventId: String = DEFAULT_EVENT_ID,
+    private val activeEmergency: () -> ActiveEmergency?,
     private val fallbackLocation: GeoPoint = FALLBACK_LOCATION,
     private val minIntervalSeconds: Long = MIN_INTERVAL_SECONDS,
     private val now: () -> Long = { System.currentTimeMillis() / 1000 },
@@ -56,10 +57,11 @@ class AnnouncePresence(
     }
 
     private suspend fun announce(): Telegram? = runCatching {
+        val emergency = activeEmergency() ?: return null
         sendTelegram(
-            eventId = eventId,
+            eventId = emergency.eventId,
             location = location.current() ?: fallbackLocation,
-            event = EventType.EARTHQUAKE,
+            event = emergency.eventType,
             status = PersonStatus.EMERGENCY,
         )
     }.onFailure { error ->
@@ -72,13 +74,6 @@ class AnnouncePresence(
     }.getOrNull()
 
     companion object {
-        /**
-         * Every automatic announce shares one event id so a rescuer reads a single triage
-         * list instead of one group per phone. Reporting a specific incident from the
-         * create form overrides it.
-         */
-        const val DEFAULT_EVENT_ID = "ZIRO-LIVE"
-
         /** Used only when no provider has ever produced a fix. Bogota city centre. */
         val FALLBACK_LOCATION = GeoPoint(lat = 4.6097, lng = -74.0817)
 

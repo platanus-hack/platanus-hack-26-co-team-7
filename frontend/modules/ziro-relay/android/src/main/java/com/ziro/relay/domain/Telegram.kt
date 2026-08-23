@@ -43,14 +43,17 @@ data class Telegram(
     val vital: VitalBlock? = null,
     /** Identity challenge used to move the person to SAFE. */
     val verify: VerifyBlock? = null,
-    /**
-     * HMAC-SHA256 over [Canonical.of]. Nullable in the MVP, but the field exists from
-     * v1 on purpose: adding it later would force a protocol version bump.
-     */
+    /** v2 device identity. The private key is Android Keystore-only. */
+    @SerialName("key_id") val keyId: String? = null,
+    /** Base64 X.509 public key. It lets an unonboarded origin be verified without a profile. */
+    @SerialName("public_key") val publicKey: String? = null,
+    /** Base64 ECDSA signature over the immutable Canonical content. */
+    val signature: String? = null,
+    /** v1-only legacy proof. Never treated as a v2 verified signature. */
     val hmac: String? = null,
 ) {
     companion object {
-        const val PROTOCOL_VERSION = 1
+        const val PROTOCOL_VERSION = 2
         const val DEFAULT_TTL = 8
         const val DEFAULT_SEVERITY = 3
     }

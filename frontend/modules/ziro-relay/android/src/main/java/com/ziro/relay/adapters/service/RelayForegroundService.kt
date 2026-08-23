@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ziro.relay.RelayContainer
+import com.ziro.relay.adapters.sync.GatewaySyncWorker
 
 /**
  * SCAFFOLD - developer A implements this in phase 2. Owner: developer A.
@@ -44,6 +45,7 @@ class RelayForegroundService : Service() {
             RelayContainer.engine.start()
             relayStarted = true
         }
+        GatewaySyncWorker.schedule(applicationContext)
         return START_STICKY
     }
 

@@ -27,7 +27,8 @@ import httpx
 
 from app.core.config import Settings, settings
 from app.core.ws import ConnectionManager, manager
-from app.models.event import Event, EventType
+from app.models.event import EventType
+from app.modules.event_activation.service import activate_event
 
 logger = logging.getLogger(__name__)
 
@@ -168,21 +169,20 @@ async def handle_feature(
     try:
         import sqlalchemy as sa
 
-        exists = session.execute(
-            sa.select(Event.event_id).where(Event.event_id == str(event_id))
-        ).scalar_one_or_none()
-        if exists is not None:
+        with session.begin():
+            result = activate_event(
+                session,
+                event_id=str(event_id),
+                event_type=EventType.EARTHQUAKE,
+                occurred_at=occurred,
+                source="sgc",
+                source_key=str(event_id),
+                actor_id=None,
+                audit_metadata={"mag": _feature_mag(feature), "place": place},
+            )
+        if not result.created:
             logger.info("trigger_sgc: duplicate id=%s, skipping", event_id)
             return "skipped_dup"
-
-        event = Event(
-            event_id=str(event_id),
-            event_type=EventType.EARTHQUAKE,
-            occurred_at=occurred,
-            closed_at=None,
-        )
-        session.add(event)
-        session.commit()
     except Exception:  # noqa: BLE001 - log and continue, never crash the app
         logger.exception("trigger_sgc: failed to persist id=%s", event_id)
         session.rollback()

@@ -8,7 +8,6 @@ import com.ziro.relay.domain.Disability
 import com.ziro.relay.domain.DocType
 import com.ziro.relay.domain.EmergencyContact
 import com.ziro.relay.domain.Profile
-import com.ziro.relay.domain.protectLegacyAnswerHash
 import com.ziro.relay.ports.ProfileStore
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -24,7 +23,6 @@ class SqliteProfileStore(private val database: RelayDatabase) : ProfileStore {
         else runCatching {
             val persisted = json.decodeFromString(PersistedProfile.serializer(), cursor.getString(0))
             persisted.toDomain().also { profile ->
-                if (persisted.answerHashVersion < ANSWER_HASH_VERSION) write(database, profile)
             }
         }.getOrNull()
     }
@@ -45,7 +43,7 @@ class SqliteProfileStore(private val database: RelayDatabase) : ProfileStore {
             BloodType.valueOf(bloodType), BloodRh.valueOf(bloodRh), allergies, chronicConditions, medications,
             Disability.valueOf(disability), isPregnant, weightKg, eps,
             emergencyContacts.map { EmergencyContact(it.name, it.phone, it.relationship) }, questionId,
-            if (answerHashVersion >= ANSWER_HASH_VERSION) answerHash else protectLegacyAnswerHash(deviceSecret, answerHash),
+            answerHash,
             deviceSecret)
         companion object {
             fun from(profile: Profile) = PersistedProfile(profile.userId, profile.fullName, profile.docType.name,
@@ -57,7 +55,7 @@ class SqliteProfileStore(private val database: RelayDatabase) : ProfileStore {
     }
 
     companion object {
-        private const val ANSWER_HASH_VERSION = 2
+        private const val ANSWER_HASH_VERSION = 3
 
         internal fun write(database: RelayDatabase, profile: Profile) {
             val values = ContentValues().apply {

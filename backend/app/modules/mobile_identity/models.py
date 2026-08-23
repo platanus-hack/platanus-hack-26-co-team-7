@@ -30,8 +30,9 @@ class BloodType(enum.Enum):
 
 
 class BloodRh(enum.Enum):
-    POSITIVE = "+"
-    NEGATIVE = "-"
+    # API and Android wire contract use enum names, not display glyphs.
+    POSITIVE = "POSITIVE"
+    NEGATIVE = "NEGATIVE"
 
 
 class Disability(enum.Enum):
@@ -61,7 +62,6 @@ class MobileProfile(Base):
     eps: Mapped[str | None] = mapped_column(String)
     question_id: Mapped[str] = mapped_column(String, nullable=False)
     answer_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    device_secret: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (UniqueConstraint("doc_type", "doc_number", name="uq_mobile_identity_profiles_document"),)
@@ -98,3 +98,18 @@ class RefreshSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (Index("ix_mobile_identity_refresh_sessions_user_id", "user_id"),)
+
+
+class DeviceIdentity(Base):
+    __tablename__ = "mobile_identity_device_identities"
+
+    key_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    public_key: Mapped[str] = mapped_column(String, nullable=False)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("mobile_identity_profiles.user_id", ondelete="SET NULL"))
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("public_key", name="uq_mobile_identity_device_identities_public_key"),
+        Index("ix_mobile_identity_device_identities_user_id", "user_id"),
+    )

@@ -215,6 +215,19 @@ export function useRelay() {
         throw new Error(message);
       }
     }, [client, refresh]),
+    sendSafeResponse: useCallback(async (telegramId: string, answer: string) => {
+      try {
+        const telegram = await client.sendSafeResponse(telegramId, answer);
+        setError(null);
+        setDeliveries((current) => ({ ...current, [telegram.id]: 'Pending relay acknowledgement' }));
+        await refresh();
+        return telegram;
+      } catch (reason: unknown) {
+        const message = messageFor(reason);
+        setError(message);
+        throw new Error(message);
+      }
+    }, [client, refresh]),
   };
 }
 

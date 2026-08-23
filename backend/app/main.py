@@ -16,6 +16,8 @@ from app.core.database import SessionLocal
 from app.modules.ai_reports import router as ai_reports
 from app.modules.dashboard import router as dashboard
 from app.modules.gateway_sync.router import router as gateway_sync_router
+from app.modules.gateway_sync.events import router as gateway_events_router
+from app.modules.event_activation.router import router as event_activation_router
 from app.modules.mobile_identity.router import router as mobile_identity_router
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,8 @@ def create_app() -> FastAPI:
     app.include_router(ai_reports.router)
     app.include_router(mobile_identity_router)
     app.include_router(gateway_sync_router)
+    app.include_router(gateway_events_router)
+    app.include_router(event_activation_router)
 
     return app
 

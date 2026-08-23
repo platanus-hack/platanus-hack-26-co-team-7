@@ -82,6 +82,9 @@ export interface Telegram {
   origin: string;
   vital: VitalBlock | null;
   verify: VerifyBlock | null;
+  key_id: string | null;
+  public_key: string | null;
+  signature: string | null;
   hmac: string | null;
 }
 
@@ -94,7 +97,8 @@ export type RelayEvent =
   | { type: 'TELEGRAM_DELIVERED'; peerId: string; telegramId: string }
   | { type: 'TELEGRAM_REJECTED'; peerId: string; reason: RejectReason }
   | { type: 'STATUS_CHANGED'; status: EngineStatus }
-  | { type: 'RADIO_ERROR'; message: string };
+  | { type: 'RADIO_ERROR'; message: string }
+  | { type: 'GATEWAY_CONNECTIVITY' };
 
 export type RelayPermissions = Record<string, boolean>;
 
@@ -153,11 +157,24 @@ export interface ProfileInput {
   isPregnant: boolean;
   weightKg: number | null;
   eps: string | null;
-  emergencyContacts: EmergencyContactInput[];
+  emergencyContacts: [EmergencyContactInput, ...EmergencyContactInput[]];
   questionId: string;
   /** Save-only plaintext. Native Kotlin hashes it and never returns or persists it. */
   identityAnswer?: string;
+  /** Server-authoritative SHA-256 answer hash, supplied after authenticated profile hydration. */
+  answerHash?: string;
 }
+
+export const GATEWAY_OUTCOMES = {
+  ACCEPTED: 'accepted', DUPLICATE: 'duplicate', IGNORED_SAFE: 'ignored_safe', INVALID_SAFE_VERIFICATION: 'invalid_safe_verification', INVALID_PAYLOAD: 'invalid_payload', INVALID_SIGNATURE: 'invalid_signature', LEGACY_REQUIRES_RESIGN: 'legacy_requires_resign', PENDING_GATEWAY: 'pending_gateway',
+} as const;
+export type GatewayOutcome = (typeof GATEWAY_OUTCOMES)[keyof typeof GATEWAY_OUTCOMES];
+export interface SecureSession { accessToken: string; refreshToken: string; expiresIn: number; }
+export interface ActiveEmergencyEvent { eventId: string; event: EventType; revision: number; }
+export interface GatewayOutboxItem { id: string; telegram: string; status: string; retryCount: number; error: string | null; }
+export interface GatewaySyncSnapshot { pendingCount: number; lastSyncAt: number | null; lastConfirmedPurgeAt: number | null; lastConfirmedPurgeOutcome: string | null; items: GatewayOutboxItem[]; }
+export interface GatewayOutcomeRecord { id: string; outcome: GatewayOutcome; error: string | null; }
+export interface DeviceIdentity { keyId: string; publicKey: string; bindingProof: string; }
 
 /** Local ledger metadata, never part of the Telegram wire contract. */
 export interface LedgerEntry {
@@ -213,7 +230,8 @@ export function parseTelegram(wireJson: string): Telegram {
   requireNumber(t, 'hop');
   requireNumber(t, 'ttl');
   requireString(t, 'origin');
-  if (t.hmac !== null && typeof t.hmac !== 'string') throw new ContractDriftError('hmac', t.hmac);
+  if (t.v === 2) { requireString(t, 'key_id'); requireString(t, 'public_key'); requireString(t, 'signature'); }
+  if (t.hmac !== null && t.hmac !== undefined && typeof t.hmac !== 'string') throw new ContractDriftError('hmac', t.hmac);
   if (t.vital !== null && typeof t.vital !== 'object') throw new ContractDriftError('vital', t.vital);
   if (t.verify !== null && typeof t.verify !== 'object') throw new ContractDriftError('verify', t.verify);
 

@@ -8,9 +8,11 @@ import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
 import com.ziro.relay.domain.toVerifyBlock
 import com.ziro.relay.domain.toVitalBlock
+import com.ziro.relay.domain.VerifyBlock
 import com.ziro.relay.ports.PeerTransport
 import com.ziro.relay.ports.ProfileStore
 import com.ziro.relay.ports.Signer
+import com.ziro.relay.adapters.crypto.KeystoreDeviceSigner
 import com.ziro.relay.ports.TelegramLedger
 import java.time.LocalDate
 import java.util.UUID
@@ -56,7 +58,10 @@ class SendTelegram(
             verify = profile?.toVerifyBlock(),
         )
 
-        val telegram = unsigned.copy(hmac = signer.sign(unsigned))
+        val deviceSigner = signer as? KeystoreDeviceSigner
+            ?: error("The active signer must provide a device identity")
+        val signable = unsigned.copy(keyId = deviceSigner.keyId, publicKey = deviceSigner.publicKey)
+        val telegram = signable.copy(signature = signer.sign(signable))
 
         val wire = TelegramCodec.encode(telegram)
         require(RelayEnvelopeCodec.telegram(telegram.id, wire.toString(Charsets.UTF_8)).size <= RelayEnvelopeCodec.MAX_BYTES) {
@@ -68,6 +73,32 @@ class SendTelegram(
         ledger.put(telegram, receivedFrom = null)
         transport.broadcast(wire)
 
+        return telegram
+    }
+
+    /**
+     * A nearby helper can answer a received person's SAFE challenge. The target's identity
+     * remains in the telegram, while the helper's registered device signs the response.
+     */
+    suspend fun safeResponse(received: Telegram, answerHash: String): Telegram {
+        require(received.verify != null) { "This telegram has no SAFE verification question." }
+        require(answerHash.matches(Regex("[a-f0-9]{64}"))) { "SAFE answer is invalid." }
+        val deviceSigner = signer as? KeystoreDeviceSigner
+            ?: error("The active signer must provide a device identity")
+        val unsigned = Telegram(
+            id = newId(), userId = received.userId, eventId = received.eventId, event = received.event,
+            status = PersonStatus.SAFE, severity = received.severity, location = received.location,
+            timestamp = now(), origin = originHash, vital = null,
+            verify = VerifyBlock(received.verify.questionId, answerHash),
+            keyId = deviceSigner.keyId, publicKey = deviceSigner.publicKey,
+        )
+        val telegram = unsigned.copy(signature = signer.sign(unsigned))
+        val wire = TelegramCodec.encode(telegram)
+        require(RelayEnvelopeCodec.telegram(telegram.id, wire.toString(Charsets.UTF_8)).size <= RelayEnvelopeCodec.MAX_BYTES) {
+            "SAFE response exceeds the 24 KiB Nearby payload limit."
+        }
+        ledger.put(telegram, receivedFrom = null)
+        transport.broadcast(wire)
         return telegram
     }
 

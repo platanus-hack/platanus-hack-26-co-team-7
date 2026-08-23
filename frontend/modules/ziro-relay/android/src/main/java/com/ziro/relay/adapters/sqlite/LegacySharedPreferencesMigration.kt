@@ -13,7 +13,6 @@ import com.ziro.relay.domain.PeerId
 import com.ziro.relay.domain.Profile
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
-import com.ziro.relay.domain.protectLegacyAnswerHash
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -145,7 +144,7 @@ class LegacySharedPreferencesMigration(private val context: Context, private val
             Profile(userId, fullName, DocType.valueOf(docType), docNumber, birthDate, BloodType.valueOf(bloodType),
                 BloodRh.valueOf(bloodRh), allergies, chronicConditions, medications, Disability.valueOf(disability),
                 isPregnant, weightKg, eps, emergencyContacts.map { EmergencyContact(it.name, it.phone, it.relationship) },
-                questionId, protectLegacyAnswerHash(secret, answerHash), secret)
+                questionId, answerHash.lowercase(), secret)
         }.getOrNull()
     }
 

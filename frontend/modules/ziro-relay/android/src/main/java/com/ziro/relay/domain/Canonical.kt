@@ -1,13 +1,13 @@
 package com.ziro.relay.domain
 
 /**
- * Deterministic byte representation of a telegram, used as the HMAC input.
+ * Deterministic immutable representation signed by the origin device.
  *
  * Three fields are excluded, and each exclusion is load-bearing:
  *
  *  - `hop` and `ttl` mutate at every node (see [RelayPolicy]). Including them would
  *    make the signature valid only at hop 0 and fail on every relay after that.
- *  - `hmac` is the output of this function, so it cannot be part of its own input.
+ *  - `signature` is the output of this function, so it cannot be part of its own input.
  *
  * The field order below is fixed by hand ON PURPOSE. Do not replace this with a JSON
  * encoder: a change in field order, whitespace or number formatting would silently
@@ -34,6 +34,8 @@ object Canonical {
         field(t.origin)
         vital(t.vital)
         verify(t.verify)
+        field(t.keyId)
+        field(t.publicKey)
     }.toByteArray(Charsets.UTF_8)
 
     private fun StringBuilder.field(value: Any?) {

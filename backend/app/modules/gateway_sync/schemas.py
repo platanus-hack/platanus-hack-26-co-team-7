@@ -45,7 +45,7 @@ class TelegramInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    v: Literal[1]
+    v: Literal[2]
     id: UUID
     user_id: Annotated[str, Field(min_length=1, max_length=128, strip_whitespace=True)]
     event_id: Annotated[str, Field(min_length=1, max_length=128, strip_whitespace=True)]
@@ -57,7 +57,9 @@ class TelegramInput(BaseModel):
     hop: Annotated[int, Field(ge=0, le=255)]
     ttl: Annotated[int, Field(ge=0, le=8)]
     origin: Annotated[str, Field(min_length=1, max_length=128, strip_whitespace=True)]
-    hmac: Annotated[str | None, Field(pattern=r"^[A-Fa-f0-9]{64}$")] = None
+    key_id: Annotated[str, Field(pattern=r"^[A-Fa-f0-9]{64}$")]
+    public_key: Annotated[str, Field(min_length=100, max_length=2048)]
+    signature: Annotated[str, Field(min_length=64, max_length=1024)]
     vital: TelegramVital | None = None
     verify: TelegramVerify | None = None
 
@@ -84,6 +86,8 @@ class TelegramBatchItemResult(BaseModel):
         "ignored_safe",
         "invalid_safe_verification",
         "invalid_payload",
+        "invalid_signature",
+        "legacy_requires_resign",
     ]
 
 

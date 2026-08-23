@@ -2,6 +2,9 @@ package com.ziro.relay
 
 import android.Manifest
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
@@ -19,6 +22,11 @@ import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.domain.TelegramCodec
 import com.ziro.relay.domain.identityAnswerHash
+import com.ziro.relay.adapters.session.SecureSession
+import com.ziro.relay.adapters.crypto.KeystoreDeviceSigner
+import com.ziro.relay.adapters.sync.GatewaySyncWorker
+import com.ziro.relay.adapters.sync.GatewaySyncSnapshot
+import com.ziro.relay.adapters.emergency.ActiveEmergency
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
@@ -77,6 +85,7 @@ class ZiroRelayModule : Module() {
         OnCreate {
             appContext.reactContext?.let { RelayContainer.attach(it) }
             observeEngine()
+            observeConnectivity()
         }
 
         /** Current node status without waiting for an event. Used on mount. */
@@ -161,6 +170,15 @@ class ZiroRelayModule : Module() {
             wire(telegram)
         }
 
+        AsyncFunction("sendSafeResponse").Coroutine<String, String, String> { telegramId, answer ->
+            val received = RelayContainer.ledger.get(telegramId)
+                ?: throw IllegalArgumentException("Received telegram is no longer available.")
+            require(RelayContainer.ledger.localState(telegramId)?.receivedFrom != null) {
+                "SAFE responses can only be created from a telegram received from another device."
+            }
+            wire(RelayContainer.sendTelegram.safeResponse(received, identityAnswerHash(answer)))
+        }
+
         /** The whole local ledger as a JSON array of telegrams. Newest first. */
         // Dot call with an explicit type argument: the no-arg lambda is otherwise ambiguous
         // between the zero- and one-parameter Coroutine overloads.
@@ -171,6 +189,44 @@ class ZiroRelayModule : Module() {
             }
             json.encodeToString(ListSerializer(LedgerEntryWire.serializer()), entries)
         }
+
+        AsyncFunction("loadSession").Coroutine<String?> {
+            RelayContainer.secureSession.load()?.let { json.encodeToString(SecureSessionWire.serializer(), SecureSessionWire(it.accessToken, it.refreshToken, it.expiresIn)) }
+        }
+        AsyncFunction("saveSession").Coroutine<Unit, String> { wire ->
+            val session = json.decodeFromString(SecureSessionWire.serializer(), wire)
+            RelayContainer.secureSession.save(SecureSession(session.accessToken, session.refreshToken, session.expiresIn))
+        }
+        AsyncFunction("clearSession").Coroutine<Unit> { RelayContainer.secureSession.clear() }
+        Function("getApiBaseUrl") { RelayContainer.secureSession.apiBaseUrl() }
+        Function("saveApiBaseUrl") { value: String ->
+            require(value.startsWith("http://") || value.startsWith("https://")) { "API base URL must start with http:// or https://" }
+            RelayContainer.secureSession.saveApiBaseUrl(value.trim().trimEnd('/'))
+            GatewaySyncWorker.schedule(RelayContainer.context())
+        }
+        Function("getDeviceIdentity") {
+            val signer = RelayContainer.signer as? KeystoreDeviceSigner ?: error("Device signer unavailable")
+            json.encodeToString(DeviceIdentityWire.serializer(), DeviceIdentityWire(signer.keyId, signer.publicKey, signer.signBinding()))
+        }
+        Function("hashIdentityAnswer") { value: String -> identityAnswerHash(value) }
+        AsyncFunction("getGatewaySyncSnapshot").Coroutine<String> {
+            json.encodeToString(GatewaySyncSnapshotWire.serializer(), GatewaySyncSnapshotWire.from(RelayContainer.gatewayOutbox.snapshot()))
+        }
+        AsyncFunction("scheduleGatewaySync").Coroutine<Unit> { GatewaySyncWorker.schedule(RelayContainer.context()) }
+        AsyncFunction("activateEmergency").Coroutine<Unit, String> { wire ->
+            val event = runCatching { json.decodeFromString(ActiveEmergencyWire.serializer(), wire) }
+                .getOrElse { throw IllegalArgumentException("Invalid emergency activation: ${it.message}") }
+            require(event.eventId.isNotBlank() && event.revision > 0) { "Emergency event id and revision are required" }
+            val profile = RelayContainer.profiles.get()
+                ?: throw IllegalStateException("A completed local profile is required before emergency activation.")
+            require(profile.userId.isNotBlank() && profile.fullName.isNotBlank()) { "A completed local profile is required before emergency activation." }
+            val denied = permissionState().filterValues { !it }.keys
+            if (denied.isNotEmpty()) throw IllegalStateException("Emergency relay needs pre-granted permissions; open the app and grant: ${denied.joinToString()}")
+            val changed = RelayContainer.activeEmergency.replaceIfNewer(ActiveEmergency(event.eventId, event.event, event.revision))
+            val context = RelayContainer.context()
+            ContextCompat.startForegroundService(context, Intent(context, RelayForegroundService::class.java))
+            if (changed) scope.launch { RelayContainer.announcePresence(force = true) }
+        }.runOnQueue(Queues.MAIN)
     }
 
     /**
@@ -186,6 +242,19 @@ class ZiroRelayModule : Module() {
                 sendEvent(EVENT_RELAY, event.toJsPayload())
             }
         }
+    }
+
+    /** Native connectivity changes enqueue durable network-constrained upload work. */
+    private fun observeConnectivity() {
+        val manager = RelayContainer.context().getSystemService(ConnectivityManager::class.java)
+        manager.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                    GatewaySyncWorker.schedule(RelayContainer.context())
+                    sendEvent(EVENT_RELAY, mapOf("type" to "GATEWAY_CONNECTIVITY"))
+                }
+            }
+        })
     }
 
     /**
@@ -355,6 +424,7 @@ private data class ProfileInput(
     val questionId: String,
     /** Save-only plaintext. Kotlin hashes it before persistence and never returns it. */
     val identityAnswer: String? = null,
+    val answerHash: String? = null,
 ) {
     fun toDomain(current: Profile?): Profile {
         require(userId.isNotBlank() && fullName.isNotBlank() && docNumber.isNotBlank() && birthDate.isNotBlank() && questionId.isNotBlank()) {
@@ -364,8 +434,9 @@ private data class ProfileInput(
         require(weightKg == null || weightKg > 0) { "Weight must be a positive number" }
         val deviceSecret = current?.deviceSecret ?: randomSecret()
         val answerHash = identityAnswer?.trim()?.takeIf(String::isNotBlank)?.let {
-            identityAnswerHash(deviceSecret, it)
+            identityAnswerHash(it)
         }
+            ?: answerHash?.lowercase()
             ?: current?.answerHash
             ?: throw IllegalArgumentException("An identity answer is required the first time you save your profile")
         return Profile(
@@ -397,6 +468,14 @@ private data class ProfileInput(
         )
     }
 }
+
+@Serializable private data class SecureSessionWire(val accessToken: String, val refreshToken: String, val expiresIn: Int)
+@Serializable private data class DeviceIdentityWire(val keyId: String, val publicKey: String, val bindingProof: String)
+@Serializable private data class GatewaySyncItemWire(val id: String, val telegram: String, val status: String, val retryCount: Int, val error: String? = null)
+@Serializable private data class GatewaySyncSnapshotWire(val pendingCount: Int, val lastSyncAt: Long? = null, val lastConfirmedPurgeAt: Long? = null, val lastConfirmedPurgeOutcome: String? = null, val items: List<GatewaySyncItemWire>) {
+    companion object { fun from(snapshot: GatewaySyncSnapshot) = GatewaySyncSnapshotWire(snapshot.pendingCount, snapshot.lastSyncAt, snapshot.lastConfirmedPurgeAt, snapshot.lastConfirmedPurgeOutcome, snapshot.items.map { GatewaySyncItemWire(it.id, it.telegram, it.status, it.retryCount, it.error) }) }
+}
+@Serializable private data class ActiveEmergencyWire(val eventId: String, val event: EventType, val revision: Int)
 
 private fun randomSecret(): String = ByteArray(32).also(SecureRandom()::nextBytes)
     .joinToString("") { "%02x".format(it) }

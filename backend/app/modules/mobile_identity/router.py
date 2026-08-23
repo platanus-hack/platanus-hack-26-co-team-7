@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import secrets
 import uuid
+import base64
+import hashlib
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_session
 from app.modules.mobile_identity.config import settings
-from app.modules.mobile_identity.models import MobileEmergencyContact, MobileProfile, RefreshSession, UserCredential
+from app.modules.mobile_identity.models import DeviceIdentity, MobileEmergencyContact, MobileProfile, RefreshSession, UserCredential
 from app.modules.mobile_identity.profile import current_person, profile_response
 from app.modules.mobile_identity.schemas import (
     LoginRequest,
@@ -21,6 +26,7 @@ from app.modules.mobile_identity.schemas import (
     RefreshRequest,
     RegisterRequest,
     TokenPair,
+    UpdateProfileRequest,
 )
 from app.modules.mobile_identity.security import (
     create_access_token,
@@ -37,19 +43,19 @@ auth_router = APIRouter(prefix="/api/v1/private/auth", tags=["private-auth"])
 profile_router = APIRouter(prefix="/api/v1/private/profile", tags=["private-profile"])
 
 
-def _issue_tokens(session: Session, user_id: str) -> TokenPair:
+def _issue_tokens(session: Session, person: MobileProfile) -> TokenPair:
     session_id = uuid.uuid4()
     refresh_token = new_refresh_token(session_id)
     session.add(
         RefreshSession(
             id=session_id,
-            user_id=user_id,
+            user_id=person.user_id,
             token_hash=hash_refresh_token(refresh_token),
             expires_at=refresh_expiry(),
         )
     )
     return TokenPair(
-        access_token=create_access_token(user_id),
+        access_token=create_access_token(person.user_id),
         refresh_token=refresh_token,
         expires_in=settings.access_token_ttl_seconds,
     )
@@ -63,17 +69,57 @@ def _invalid_refresh() -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token.")
 
 
+def _valid_device_binding(key_id: str, public_key: str, binding_proof: str) -> bool:
+    try:
+        public_bytes = base64.b64decode(public_key, validate=True)
+        if hashlib.sha256(public_bytes).hexdigest() != key_id.casefold():
+            return False
+        key = serialization.load_der_public_key(public_bytes)
+        if not isinstance(key, ec.EllipticCurvePublicKey):
+            return False
+        canonical = f"replica-device-binding-v1\x1f{key_id.casefold()}\x1f{public_key}\x1f".encode()
+        key.verify(base64.b64decode(binding_proof, validate=True), canonical, ec.ECDSA(hashes.SHA256()))
+        return True
+    except (TypeError, ValueError, InvalidSignature):
+        return False
+
+
+def _bind_device_identity(session: Session, user_id: str, key_id: str, public_key: str, binding_proof: str) -> None:
+    """Create or idempotently confirm an immutable, proof-of-possession device binding."""
+    normalized_key_id = key_id.lower()
+    if not _valid_device_binding(normalized_key_id, public_key, binding_proof):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device identity proof is invalid.")
+    identities = session.execute(
+        select(DeviceIdentity).where(
+            or_(DeviceIdentity.key_id == normalized_key_id, DeviceIdentity.public_key == public_key)
+        )
+    ).scalars().all()
+    if not identities:
+        session.add(DeviceIdentity(user_id=user_id, key_id=normalized_key_id, public_key=public_key))
+        return
+    if len(identities) != 1:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Device identity is already registered.")
+    identity = identities[0]
+    if (
+        identity.user_id == user_id
+        and identity.key_id == normalized_key_id
+        and identity.public_key == public_key
+    ):
+        return
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Device identity is already registered.")
+
+
 @auth_router.post("/register", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, session: Session = Depends(get_session)) -> ProfileResponse:
     user_id = str(uuid.uuid4())
-    person_values = payload.model_dump(exclude={"password", "emergency_contacts"})
+    person_values = payload.model_dump(exclude={"password", "emergency_contacts", "device_identity"})
     person = MobileProfile(
         user_id=user_id,
         **person_values,
-        device_secret=secrets.token_urlsafe(48),
     )
     session.add(person)
     session.add(UserCredential(user_id=user_id, password_hash=hash_password(payload.password)))
+    _bind_device_identity(session, user_id, payload.device_identity.key_id, payload.device_identity.public_key, payload.device_identity.binding_proof)
     session.add_all(
         [MobileEmergencyContact(user_id=user_id, **contact.model_dump()) for contact in payload.emergency_contacts]
     )
@@ -81,7 +127,7 @@ def register(payload: RegisterRequest, session: Session = Depends(get_session)) 
         session.commit()
     except IntegrityError as error:
         session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document is already registered.") from error
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document or device identity is already registered.") from error
     return profile_response(person, session.execute(
         select(MobileEmergencyContact).where(MobileEmergencyContact.user_id == user_id)
     ).scalars().all())
@@ -96,7 +142,7 @@ def login(payload: LoginRequest, session: Session = Depends(get_session)) -> Tok
     ).one_or_none()
     if row is None or not verify_password(payload.password, row.UserCredential.password_hash):
         raise _invalid_login()
-    tokens = _issue_tokens(session, row.MobileProfile.user_id)
+    tokens = _issue_tokens(session, row.MobileProfile)
     session.commit()
     return tokens
 
@@ -116,7 +162,10 @@ def refresh(payload: RefreshRequest, session: Session = Depends(get_session)) ->
     ):
         raise _invalid_refresh()
     refresh_session.revoked_at = utcnow()
-    tokens = _issue_tokens(session, refresh_session.user_id)
+    person = session.get(MobileProfile, refresh_session.user_id)
+    if person is None:
+        raise _invalid_refresh()
+    tokens = _issue_tokens(session, person)
     session.commit()
     return tokens
 
@@ -146,12 +195,23 @@ def get_profile(person: MobileProfile = Depends(current_person), session: Sessio
 
 @profile_router.put("", response_model=ProfileResponse)
 def update_profile(
-    payload: ProfileFields,
+    payload: UpdateProfileRequest,
     person: MobileProfile = Depends(current_person),
     session: Session = Depends(get_session),
 ) -> ProfileResponse:
-    for field, value in payload.model_dump(exclude={"emergency_contacts"}).items():
+    values = payload.model_dump(exclude={"emergency_contacts", "device_identity", "answer_hash"})
+    for field, value in values.items():
         setattr(person, field, value)
+    if payload.answer_hash is not None:
+        person.answer_hash = payload.answer_hash.lower()
+    if payload.device_identity:
+        _bind_device_identity(
+            session,
+            person.user_id,
+            payload.device_identity.key_id,
+            payload.device_identity.public_key,
+            payload.device_identity.binding_proof,
+        )
     session.execute(delete(MobileEmergencyContact).where(MobileEmergencyContact.user_id == person.user_id))
     session.add_all(
         [

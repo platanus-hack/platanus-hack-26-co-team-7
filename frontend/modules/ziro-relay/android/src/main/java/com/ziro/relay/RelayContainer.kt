@@ -2,12 +2,15 @@ package com.ziro.relay
 
 import android.content.Context
 import com.ziro.relay.adapters.bus.SharedFlowEventBus
-import com.ziro.relay.adapters.crypto.HmacSha256Signer
+import com.ziro.relay.adapters.crypto.KeystoreDeviceSigner
 import com.ziro.relay.adapters.ledger.SqliteTelegramLedger
 import com.ziro.relay.adapters.location.AndroidLocationSource
 import com.ziro.relay.adapters.nearby.NearbyTransport
 import com.ziro.relay.adapters.profile.SqliteProfileStore
 import com.ziro.relay.adapters.sqlite.RelayDatabase
+import com.ziro.relay.adapters.sync.GatewayOutbox
+import com.ziro.relay.adapters.emergency.ActiveEmergencyStore
+import com.ziro.relay.adapters.session.SecureSessionStore
 import com.ziro.relay.adapters.sqlite.LegacySharedPreferencesMigration
 import com.ziro.relay.application.AnnouncePresence
 import com.ziro.relay.application.ForwardPending
@@ -54,6 +57,12 @@ object RelayContainer {
         private set
     lateinit var engine: RelayEngine
         private set
+    lateinit var gatewayOutbox: GatewayOutbox
+        private set
+    lateinit var secureSession: SecureSessionStore
+        private set
+    lateinit var activeEmergency: ActiveEmergencyStore
+        private set
 
     @Synchronized
     fun attach(context: Context) {
@@ -65,15 +74,23 @@ object RelayContainer {
         bus = SharedFlowEventBus()
         val database = RelayDatabase(appContext)
         LegacySharedPreferencesMigration(appContext, database).run()
-        ledger = SqliteTelegramLedger(database)
-        signer = HmacSha256Signer()
+        gatewayOutbox = GatewayOutbox(database)
+        activeEmergency = ActiveEmergencyStore(database)
+        secureSession = SecureSessionStore(appContext)
+        ledger = SqliteTelegramLedger(database, gatewayOutbox)
+        signer = KeystoreDeviceSigner(appContext)
         profiles = SqliteProfileStore(database)
         ingest = IngestTelegram(ledger = ledger, signer = signer, bus = bus, allowUnsigned = false)
         transport = NearbyTransport(appContext, bus, scope, originHash, ingest)
         forwardPending = ForwardPending(ledger, transport)
         sendTelegram = SendTelegram(ledger, transport, signer, profiles, originHash)
         location = AndroidLocationSource(appContext)
-        announcePresence = AnnouncePresence(sendTelegram, location, bus)
+        announcePresence = AnnouncePresence(
+            sendTelegram = sendTelegram,
+            location = location,
+            bus = bus,
+            activeEmergency = { activeEmergency.current() },
+        )
         engine = RelayEngine(transport, bus, forwardPending, ledger, scope, announcePresence, location)
     }
 

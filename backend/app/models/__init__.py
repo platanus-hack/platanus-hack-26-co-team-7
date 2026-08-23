@@ -4,7 +4,7 @@ Re-exports every ORM model and enum so that ``import app.models`` registers
 all tables on ``Base.metadata`` for Alembic migration discovery.
 """
 
-from app.models.event import Event, EventCloseReason, EventType
+from app.models.event import Event, EventActivation, EventCloseReason, EventType
 from app.models.person import (
     BloodRh,
     BloodType,
@@ -23,6 +23,7 @@ from app.models.analytics import ReceivedCell, Report, ReportSource
 from app.modules.gateway_sync.models import GatewayTelegramRecord, PersonState
 from app.modules.mobile_identity.models import (
     MobileEmergencyContact,
+    DeviceIdentity,
     MobileProfile,
     RefreshSession,
     UserCredential,
@@ -30,6 +31,7 @@ from app.modules.mobile_identity.models import (
 
 __all__ = [
     "Event",
+    "EventActivation",
     "EventCloseReason",
     "EventType",
     "BloodRh",
@@ -51,6 +53,7 @@ __all__ = [
     "GatewayTelegramRecord",
     "PersonState",
     "MobileEmergencyContact",
+    "DeviceIdentity",
     "MobileProfile",
     "RefreshSession",
     "UserCredential",

@@ -3,8 +3,6 @@ package com.ziro.relay.domain
 import java.time.LocalDate
 import java.time.Period
 import java.time.format.DateTimeParseException
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * The owner of this phone, captured during onboarding, before any event.
@@ -32,7 +30,7 @@ data class Profile(
     val eps: String? = null,
     val emergencyContacts: List<EmergencyContact> = emptyList(),
     val questionId: String,
-    /** Keyed digest of the expected answer. The plaintext and key never leave this device. */
+    /** SHA-256 of the normalized expected answer. The plaintext never leaves this device. */
     val answerHash: String,
     /** HMAC key. Never leaves this device, never enters a telegram. */
     val deviceSecret: String,
@@ -87,22 +85,11 @@ fun Profile.toVerifyBlock(): VerifyBlock = VerifyBlock(
     answerHash = answerHash,
 )
 
-/**
- * The relay wire keeps its existing `answer_hash` field, but that value must not be usable as
- * an offline oracle for a short answer. The device secret is random per profile and stays local.
- */
-fun identityAnswerHash(deviceSecret: String, answer: String): String =
-    hmacSha256(deviceSecret, sha256(answer))
+/** V1 SAFE contract: trim/collapse/case-fold first, then SHA-256. */
+fun identityAnswerHash(answer: String): String = sha256(normalizeIdentityAnswer(answer))
 
-/** Wraps pre-keyed legacy answer hashes without recovering or exposing their plaintext. */
-fun protectLegacyAnswerHash(deviceSecret: String, legacyAnswerHash: String): String =
-    hmacSha256(deviceSecret, legacyAnswerHash)
+fun normalizeIdentityAnswer(answer: String): String = answer.trim().split(Regex("\\s+")).joinToString(" ").lowercase()
 
 private fun sha256(value: String): String = java.security.MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray(Charsets.UTF_8))
     .joinToString("") { "%02x".format(it) }
-
-private fun hmacSha256(secret: String, value: String): String = Mac.getInstance("HmacSHA256").run {
-    init(SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256"))
-    doFinal(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-}

@@ -13,6 +13,10 @@ import {
   type ProfileInput,
   type Telegram,
   type TelegramDraft,
+  type SecureSession,
+  type GatewaySyncSnapshot,
+  type DeviceIdentity,
+  type ActiveEmergencyEvent,
 } from './src/ZiroRelay.types';
 
 export * from './src/ZiroRelay.types';
@@ -44,8 +48,19 @@ interface ZiroRelayNativeModule {
   sendTelegram(
     draft: string,
   ): Promise<string>;
+  sendSafeResponse(telegramId: string, answer: string): Promise<string>;
   /** The whole local ledger as a JSON array of telegrams. */
   getLedger(): Promise<string>;
+  loadSession(): Promise<string | null>;
+  saveSession(session: string): Promise<void>;
+  clearSession(): Promise<void>;
+  getApiBaseUrl(): string | null;
+  saveApiBaseUrl(value: string): void;
+  hashIdentityAnswer(value: string): string;
+  getGatewaySyncSnapshot(): Promise<string>;
+  getDeviceIdentity(): string;
+  scheduleGatewaySync(): Promise<void>;
+  activateEmergency(event: string): Promise<void>;
   addListener(event: 'onRelayEvent', listener: (payload: RelayEvent) => void): EventSubscription;
 }
 
@@ -89,6 +104,10 @@ export async function sendTelegram(draft: TelegramDraft): Promise<Telegram> {
   return parseTelegram(wire);
 }
 
+export async function sendSafeResponse(telegramId: string, answer: string): Promise<Telegram> {
+  return parseTelegram(await native.sendSafeResponse(telegramId, answer));
+}
+
 /**
  * Reads the whole ledger from Kotlin.
  *
@@ -100,6 +119,20 @@ export async function getLedger(): Promise<LedgerEntry[]> {
   const wire = await native.getLedger();
   return parseLedgerEntries(wire);
 }
+
+export async function loadSession(): Promise<SecureSession | null> {
+  const wire = await native.loadSession();
+  return wire ? JSON.parse(wire) as SecureSession : null;
+}
+export function saveSession(session: SecureSession): Promise<void> { return native.saveSession(JSON.stringify(session)); }
+export function clearSession(): Promise<void> { return native.clearSession(); }
+export function getApiBaseUrl(): string | null { return native.getApiBaseUrl(); }
+export function saveApiBaseUrl(value: string): void { native.saveApiBaseUrl(value); }
+export function hashIdentityAnswer(value: string): string { return native.hashIdentityAnswer(value); }
+export async function getGatewaySyncSnapshot(): Promise<GatewaySyncSnapshot> { return JSON.parse(await native.getGatewaySyncSnapshot()) as GatewaySyncSnapshot; }
+export function getDeviceIdentity(): DeviceIdentity { return JSON.parse(native.getDeviceIdentity()) as DeviceIdentity; }
+export function scheduleGatewaySync(): Promise<void> { return native.scheduleGatewaySync(); }
+export async function activateEmergency(event: ActiveEmergencyEvent): Promise<void> { await native.activateEmergency(JSON.stringify(event)); }
 
 /**
  * Requests the runtime permissions Nearby Connections needs to discover and advertise.

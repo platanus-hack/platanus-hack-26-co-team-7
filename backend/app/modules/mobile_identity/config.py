@@ -23,12 +23,17 @@ def _positive_int(name: str, default: int) -> int:
     return value
 
 
+def _enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().casefold() == "true"
+
+
 @dataclass(frozen=True)
 class MobileIdentitySettings:
     jwt_secret: str
     refresh_token_pepper: str
     access_token_ttl_seconds: int
     refresh_token_ttl_seconds: int
+    demo_trigger_enabled: bool
 
 
 settings = MobileIdentitySettings(
@@ -36,4 +41,5 @@ settings = MobileIdentitySettings(
     refresh_token_pepper=_require_secret("AUTH_REFRESH_TOKEN_PEPPER"),
     access_token_ttl_seconds=_positive_int("AUTH_ACCESS_TOKEN_TTL_SECONDS", 900),
     refresh_token_ttl_seconds=_positive_int("AUTH_REFRESH_TOKEN_TTL_SECONDS", 2_592_000),
+    demo_trigger_enabled=_enabled("DEMO_TRIGGER_ENABLED"),
 )

@@ -59,18 +59,22 @@ def create_access_token(user_id: str) -> str:
     return f"{header}.{payload}.{signature}"
 
 
-def require_user_id(credentials: HTTPAuthorizationCredentials | None) -> str:
+def _claims(credentials: HTTPAuthorizationCredentials | None) -> dict[str, object]:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
     try:
         header, payload, signature = credentials.credentials.split(".")
         expected = _b64encode(hmac.new(settings.jwt_secret.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest())
         claims = json.loads(_b64decode(payload))
-        if not hmac.compare_digest(signature, expected) or claims.get("aud") != JWT_AUDIENCE or claims.get("iss") != JWT_ISSUER or not isinstance(claims.get("sub"), str) or claims["exp"] <= int(time.time()):
+        if not hmac.compare_digest(signature, expected) or claims.get("aud") != JWT_AUDIENCE or claims.get("iss") != JWT_ISSUER or not isinstance(claims.get("sub"), str) or not isinstance(claims.get("exp"), int) or claims["exp"] <= int(time.time()):
             raise ValueError
-        return claims["sub"]
+        return claims
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         raise _unauthorized() from None
+
+
+def require_user_id(credentials: HTTPAuthorizationCredentials | None) -> str:
+    return _claims(credentials)["sub"]  # type: ignore[return-value]
 
 
 def new_refresh_token(session_id: uuid.UUID) -> str:

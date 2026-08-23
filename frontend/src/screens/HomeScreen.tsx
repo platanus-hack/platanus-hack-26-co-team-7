@@ -15,7 +15,8 @@ import {
 } from 'ziro-relay';
 
 import { useRelay } from '../hooks/useRelay';
-import { USE_FAKE_ENGINE } from '../native/relayClient';
+import { createRelayClient } from '../native/relayClient';
+import type { PrivateApi } from '../api/privateApi';
 
 const TABS = { RELAY: 'RELAY', CREATE: 'CREATE', INBOX: 'INBOX', PROFILE: 'PROFILE' } as const;
 type Tab = (typeof TABS)[keyof typeof TABS];
@@ -25,7 +26,8 @@ const DEFAULT_DRAFT: TelegramDraft = {
   location: { lat: 4.6097, lng: -74.0817 }, severity: 3,
 };
 
-export function HomeScreen() {
+interface HomeScreenProps { onProfileSave: (profile: ProfileInput) => Promise<void>; onLogout: () => Promise<void>; api: PrivateApi | null; showDemoTrigger: boolean; emergencyStatus: string; onTriggerDemo: () => void; }
+export function HomeScreen({ onProfileSave, onLogout, api, showDemoTrigger, emergencyStatus, onTriggerDemo }: HomeScreenProps) {
   const relay = useRelay();
   const [tab, setTab] = useState<Tab>(TABS.RELAY);
   const [telegramDraft, setTelegramDraft] = useState(DEFAULT_DRAFT);
@@ -42,7 +44,7 @@ export function HomeScreen() {
   }, [relay.lastPeerConnection]);
 
   const permissionsGranted = allRequiredPermissionsGranted(relay.permissions);
-  const showPermissionSetup = !USE_FAKE_ENGINE && !permissionsGranted && !permissionModalDismissed;
+  const showPermissionSetup = !permissionsGranted && !permissionModalDismissed;
 
   const submitTelegram = async () => {
     const validation = validateTelegram(telegramDraft);
@@ -61,7 +63,7 @@ export function HomeScreen() {
     const validation = validateProfile(profileDraft);
     if (validation) return Alert.alert('Check the profile', validation);
     try {
-      await relay.saveProfile(profileDraft);
+      await onProfileSave(profileDraft);
       Alert.alert('Profile saved', 'Your private profile will be used in your next telegram.');
     } catch (error: unknown) {
       Alert.alert('Could not save profile', messageFor(error));
@@ -71,16 +73,15 @@ export function HomeScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <View><Text style={styles.brand}>ZIRO</Text><Text style={styles.subtitle}>Offline emergency relay</Text></View>
-        {USE_FAKE_ENGINE ? <Text style={styles.fake}>EXPO GO DEMO</Text> : null}
+        <View><Text style={styles.brand}>ZIRO</Text><Text style={styles.subtitle}>Offline emergency relay</Text></View><Action label="Log out / switch account" onPress={() => void onLogout().catch((error: unknown) => Alert.alert('Logout failed', messageFor(error)))} secondary />
       </View>
       <View style={styles.tabs}>
         {Object.values(TABS).map((item) => <TabButton key={item} label={item} active={tab === item} onPress={() => setTab(item)} />)}
       </View>
       {relay.error ? <Text style={styles.error}>{relay.error}</Text> : null}
-      {tab === TABS.RELAY ? <RelayPanel relay={relay} /> : null}
+       {tab === TABS.RELAY ? <RelayPanel relay={relay} api={api} showDemoTrigger={showDemoTrigger} emergencyStatus={emergencyStatus} onTriggerDemo={onTriggerDemo} /> : null}
       {tab === TABS.CREATE ? <TelegramForm draft={telegramDraft} onChange={setTelegramDraft} onSubmit={() => void submitTelegram()} /> : null}
-      {tab === TABS.INBOX ? <InboxPanel telegrams={relay.inbox} /> : null}
+       {tab === TABS.INBOX ? <InboxPanel telegrams={relay.inbox} onSafeResponse={(id, answer) => relay.sendSafeResponse(id, answer)} /> : null}
       {tab === TABS.PROFILE ? <ProfileForm draft={profileDraft} onChange={setProfileDraft} onSave={() => void saveProfile()} /> : null}
       <PermissionSetupModal relay={relay} visible={showPermissionSetup} onDismiss={() => setPermissionModalDismissed(true)} />
       <Modal transparent visible={connectedPeer !== null} animationType="fade" onRequestClose={() => setConnectedPeer(null)}>
@@ -105,8 +106,8 @@ function PermissionSetupModal({ relay, visible, onDismiss }: PermissionSetupModa
   </Modal>;
 }
 
-interface RelayPanelProps { relay: ReturnType<typeof useRelay>; }
-function RelayPanel({ relay }: RelayPanelProps) {
+interface RelayPanelProps { relay: ReturnType<typeof useRelay>; api: PrivateApi | null; showDemoTrigger: boolean; emergencyStatus: string; onTriggerDemo: () => void; }
+function RelayPanel({ relay, api, showDemoTrigger, emergencyStatus, onTriggerDemo }: RelayPanelProps) {
   const permissionsGranted = allRequiredPermissionsGranted(relay.permissions);
   return <ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.heading}>Relay control</Text>
@@ -117,8 +118,11 @@ function RelayPanel({ relay }: RelayPanelProps) {
       <Text>Permissions: {permissionsGranted ? 'ready' : 'required'}</Text>
       <Text>Granted: {permissionList(relay.permissions.granted)}</Text>
       <Text>Denied: {permissionList(relay.permissions.denied, 'none')}</Text>
+      {relay.status === 'ORPHAN' ? <Text style={styles.errorInline}>ORPHAN: no peers are reachable. Keep Bluetooth and Wi-Fi enabled; the relay will recover automatically when another ZIRO device is discovered.</Text> : null}
     </View>
     <OwnCard telegrams={relay.outbox} deliveries={relay.deliveries} />
+    <View style={styles.statusCard}><Text style={styles.diagnosticTitle}>Emergency activation</Text><Text>{emergencyStatus}</Text>{showDemoTrigger ? <Action label="Activate demo emergency" onPress={onTriggerDemo} /> : null}</View>
+    {api ? <><GatewaySyncPanel /><PublicDashboardPanel api={api} /></> : null}
     {!permissionsGranted ? <Action label="Grant nearby permissions" onPress={() => { void relay.requestPermissions().catch(() => undefined); }} /> : null}
     {relay.permissions.denied.length > 0 ? <Text style={styles.error}>Permissions denied: {relay.permissions.denied.join(', ')}</Text> : null}
     <Action label="Start offline relay (requests permissions)" onPress={() => void relay.start().catch((error: unknown) => Alert.alert('Relay cannot start', messageFor(error)))} disabled={relay.status !== 'IDLE'} />
@@ -128,6 +132,25 @@ function RelayPanel({ relay }: RelayPanelProps) {
     {relay.radioError ? <View><Text style={styles.error}>Radio: {relay.radioError}</Text><Action label="Reset relay radio" onPress={() => { void relay.stop().then(relay.start); }} secondary /></View> : null}
     <View style={styles.diagnostics}><Text style={styles.diagnosticTitle}>Recent relay activity</Text>{relay.relayEvents.length === 0 ? <Text style={styles.diagnosticLine}>No native relay events yet.</Text> : relay.relayEvents.slice(0, 5).map((event, index) => <Text key={`${event.type}-${index}`} style={styles.diagnosticLine}>{formatRelayEvent(event)}</Text>)}</View>
   </ScrollView>;
+}
+
+function GatewaySyncPanel() {
+  const client = createRelayClient();
+  const [snapshot, setSnapshot] = useState<import('ziro-relay').GatewaySyncSnapshot | null>(null);
+  const refreshSnapshot = async () => setSnapshot(await client.getGatewaySyncSnapshot());
+  useEffect(() => { void refreshSnapshot(); }, []);
+  const sync = async () => {
+    try { await client.scheduleGatewaySync(); await refreshSnapshot(); }
+    catch (error) { Alert.alert('Gateway sync failed', messageFor(error)); }
+  };
+  return <View style={styles.statusCard}><Text style={styles.diagnosticTitle}>Private gateway sync</Text><Text>{snapshot?.pendingCount ?? 0} telegram(s) pending gateway</Text><Text>Last sync: {snapshot?.lastSyncAt ? new Date(snapshot.lastSyncAt).toLocaleString() : 'never'}</Text><Text>{snapshot?.lastConfirmedPurgeAt ? `Sensitive local data purged after server ${snapshot.lastConfirmedPurgeOutcome} at ${new Date(snapshot.lastConfirmedPurgeAt).toLocaleString()}.` : 'Sensitive local data stays on this device until the server confirms it.'}</Text>{snapshot?.items.slice(0, 3).map((item) => <Text key={item.id} style={styles.diagnosticLine}>{item.id.slice(0, 8)}: {gatewayOutcomeLabel(item.status, item.error)}</Text>)}<Action label="Sync private outbox" onPress={() => void sync()} /></View>;
+}
+
+function PublicDashboardPanel({ api }: { api: PrivateApi }) {
+  const [summary, setSummary] = useState<import('../api/privateApi').PublicDashboardSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => void api.publicDashboardSummary().then(setSummary).catch((reason: unknown) => setError(messageFor(reason)));
+  return <View style={styles.statusCard}><Text style={styles.diagnosticTitle}>Public situation dashboard</Text><Text style={styles.help}>Read-only H3 heatmap and aggregate reports. This view never requests personal or telegram records.</Text>{summary ? <><Text>{summary.heatmapCells} aggregated heatmap cell(s) online</Text>{summary.reports.map((report) => <Text key={report.title}>{report.title}: {report.summary}</Text>)}</> : <Text>{error ?? 'Not loaded.'}</Text>}<Action label="Refresh public summary" onPress={load} secondary /></View>;
 }
 
 interface TelegramFormProps { draft: TelegramDraft; onChange: (draft: TelegramDraft) => void; onSubmit: () => void; }
@@ -145,25 +168,32 @@ function TelegramForm({ draft, onChange, onSubmit }: TelegramFormProps) {
   </ScrollView>;
 }
 
-interface InboxPanelProps { telegrams: LedgerEntry[]; }
+interface InboxPanelProps { telegrams: LedgerEntry[]; onSafeResponse: (id: string, answer: string) => Promise<unknown>; }
 /**
  * Other people, only. This device's own card is NOT here even though the ledger carries
  * it: an inbox that lists what you sent yourself reads like a bug, and it buries the one
  * thing that matters - somebody nearby needs help. Your own card lives in RELAY.
  */
-function InboxPanel({ telegrams }: InboxPanelProps) {
+function InboxPanel({ telegrams, onSafeResponse }: InboxPanelProps) {
+  const [selected, setSelected] = useState<LedgerEntry | null>(null);
+  const [showCoordinates, setShowCoordinates] = useState(false);
+  const [answer, setAnswer] = useState('');
+  const safe = async () => {
+    if (!selected || !answer.trim()) return Alert.alert('SAFE answer required', 'Ask the nearby person and enter their answer.');
+    try { await onSafeResponse(selected.telegram.id, answer); setAnswer(''); Alert.alert('SAFE telegram queued', 'The helping device signed it and it is now relaying.'); }
+    catch (error: unknown) { Alert.alert('Could not send SAFE response', messageFor(error)); }
+  };
   return <ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.heading}>People who need help</Text>
     <Text style={styles.help}>Everything this phone received from the mesh. It survives with no connectivity and across restarts.</Text>
     {telegrams.length === 0 ? <Text style={styles.empty}>Nobody has reached this device yet. Start the relay and wait for another ZIRO phone.</Text> : <Text style={styles.receipt}>{telegrams.length} person(s) reported</Text>}
-    {telegrams.map(({ telegram, receivedFrom }) => <View key={telegram.id} style={styles.telegramCard}>
+    {telegrams.map((entry) => { const { telegram, receivedFrom } = entry; return <Pressable key={telegram.id} style={styles.telegramCard} onPress={() => { setSelected(entry); setShowCoordinates(false); }}>
       <Text style={styles.cardTitle}>{telegram.vital?.name ?? telegram.user_id} · {telegram.status}</Text>
-      <Text>{telegram.event} / severity {telegram.severity}</Text><Text>TTL {telegram.ttl} · hops {telegram.hop}</Text>
-      <Text>Origin {telegram.origin} · {new Date(telegram.timestamp * 1000).toLocaleString()}</Text>
-      <Text>Coordinates {telegram.location.lat.toFixed(4)}, {telegram.location.lng.toFixed(4)}</Text>
+      <Text>{telegram.event} / clinical priority {telegram.severity}/5</Text><Text>Tap for triage details</Text>
       <Text style={styles.delivery}>Relayed by {receivedFrom}</Text>
       {telegram.vital ? <Text>Blood {telegram.vital.blood ?? 'unknown'} · allergies {telegram.vital.allergies.join(', ') || 'none'}</Text> : null}
-    </View>)}
+    </Pressable>; })}
+    <Modal transparent visible={selected !== null} onRequestClose={() => setSelected(null)}><View style={styles.modalBackdrop}><ScrollView contentContainerStyle={styles.modalCard}>{selected ? <><Text style={styles.heading}>Inbound triage</Text><Text>{selected.telegram.vital?.name ?? selected.telegram.user_id} · {selected.telegram.status}</Text><Text>Clinical priority: {selected.telegram.severity}/5</Text><Text>Event: {selected.telegram.event} / {selected.telegram.event_id}</Text><Text>Sender: {selected.receivedFrom ?? 'unknown'} · origin {selected.telegram.origin}</Text><Text>Received telegram: {new Date(selected.telegram.timestamp * 1000).toLocaleString()} · hops {selected.telegram.hop} · TTL {selected.telegram.ttl}</Text><Text>Blood: {selected.telegram.vital?.blood ?? 'unknown'}</Text><Text>Allergies: {selected.telegram.vital?.allergies.join(', ') || 'none reported'}</Text><Text>Conditions: {selected.telegram.vital?.conditions.join(', ') || 'none reported'}</Text><Text>Medication: {selected.telegram.vital?.medications.join(', ') || 'none reported'}</Text><Text>Disability: {selected.telegram.vital?.disability ?? 'unknown'} · pregnant: {String(selected.telegram.vital?.pregnant ?? false)}</Text><Action label={showCoordinates ? 'Hide exact coordinates' : 'Reveal exact coordinates deliberately'} onPress={() => setShowCoordinates(!showCoordinates)} secondary />{showCoordinates ? <Text>Coordinates {selected.telegram.location.lat.toFixed(5)}, {selected.telegram.location.lng.toFixed(5)}</Text> : null}{selected.receivedFrom && selected.telegram.verify ? <><Text>SAFE verification question ID: {selected.telegram.verify.question_id}</Text><Field label="Nearby person's answer" value={answer} secureTextEntry onChangeText={setAnswer} /><Action label="Send signed SAFE response" onPress={() => void safe()} /></> : null}<Action label="Close" onPress={() => setSelected(null)} secondary /></> : null}</ScrollView></View></Modal>
   </ScrollView>;
 }
 
@@ -204,11 +234,11 @@ function ProfileForm({ draft, onChange, onSave }: ProfileFormProps) {
     <View style={styles.switchRow}><Text>Pregnant</Text><Switch value={draft.isPregnant} onValueChange={(isPregnant) => onChange({ ...draft, isPregnant })} /></View>
     <Field label="Weight (kg)" value={draft.weightKg?.toString() ?? ''} keyboardType="number-pad" onChangeText={(value) => onChange({ ...draft, weightKg: value ? Number(value) : null })} />
     <Field label="EPS" value={draft.eps ?? ''} onChangeText={(eps) => onChange({ ...draft, eps: eps || null })} />
-    <Field label="Emergency contact name" value={contact.name} onChangeText={(value) => setContact('name', value)} />
-    <Field label="Emergency contact phone" value={contact.phone} keyboardType="phone-pad" onChangeText={(value) => setContact('phone', value)} />
-    <Field label="Emergency contact relationship" value={contact.relationship} onChangeText={(value) => setContact('relationship', value)} />
+    <Field label="Emergency contact name *" value={contact.name} onChangeText={(value) => setContact('name', value)} />
+    <Field label="Emergency contact phone *" value={contact.phone} keyboardType="phone-pad" onChangeText={(value) => setContact('phone', value)} />
+    <Field label="Emergency contact relationship *" value={contact.relationship} onChangeText={(value) => setContact('relationship', value)} />
     <Field label="Verification question ID *" value={draft.questionId} onChangeText={(questionId) => onChange({ ...draft, questionId })} />
-    <Field label="Identity answer *" value={draft.identityAnswer ?? ''} secureTextEntry onChangeText={(identityAnswer) => onChange({ ...draft, identityAnswer })} />
+    <Field label="New identity answer (only to change it)" value={draft.identityAnswer ?? ''} secureTextEntry onChangeText={(identityAnswer) => onChange({ ...draft, identityAnswer })} />
     <Action label="Save private profile" onPress={onSave} />
   </ScrollView>;
 }
@@ -223,7 +253,8 @@ interface TabButtonProps { label: string; active: boolean; onPress: () => void; 
 function TabButton({ label, active, onPress }: TabButtonProps) { return <Pressable style={[styles.tab, active && styles.tabActive]} onPress={onPress}><Text style={active ? styles.tabTextActive : styles.tabText}>{label}</Text></Pressable>; }
 
 function validateTelegram(draft: TelegramDraft): string | null { if (!draft.eventId.trim()) return 'Event identifier is required.'; if (!Number.isFinite(draft.location.lat) || draft.location.lat < -90 || draft.location.lat > 90) return 'Latitude must be between -90 and 90.'; if (!Number.isFinite(draft.location.lng) || draft.location.lng < -180 || draft.location.lng > 180) return 'Longitude must be between -180 and 180.'; return null; }
-function validateProfile(profile: ProfileInput): string | null { if (!profile.userId.trim() || !profile.fullName.trim() || !profile.docNumber.trim() || !profile.birthDate.trim() || !profile.questionId.trim() || !profile.identityAnswer?.trim()) return 'User ID, name, document, birth date, verification question and identity answer are required.'; if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.birthDate)) return 'Birth date must use YYYY-MM-DD.'; return null; }
+function validateProfile(profile: ProfileInput): string | null { if (!profile.userId.trim() || !profile.fullName.trim() || !profile.docNumber.trim() || !profile.birthDate.trim() || !profile.questionId.trim() || (!profile.identityAnswer?.trim() && !profile.answerHash)) return 'User ID, name, document, birth date, verification question and identity answer are required.'; if (profile.emergencyContacts.length === 0 || profile.emergencyContacts.some((contact) => !contact.name.trim() || !contact.phone.trim() || !contact.relationship.trim())) return 'At least one complete emergency contact is required.'; if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.birthDate)) return 'Birth date must use YYYY-MM-DD.'; return null; }
+function gatewayOutcomeLabel(status: string, error: string | null): string { if (status === 'pending') return 'Pending gateway'; if (status === 'accepted') return 'Valid SAFE or telegram accepted'; if (status === 'invalid_safe_verification') return 'Invalid SAFE response'; if (status === 'ignored_safe') return 'Ignored: target already SAFE'; return error ? `${status}: ${error}` : status; }
 function splitList(value: string): string[] { return value.split(',').map((entry) => entry.trim()).filter(Boolean); }
 function messageFor(error: unknown): string { return error instanceof Error ? error.message : 'Unexpected offline relay error.'; }
 function allRequiredPermissionsGranted(permissions: PermissionResult): boolean { return permissions.granted.length > 0 && permissions.denied.length === 0; }
@@ -239,6 +270,7 @@ function formatRelayEvent(event: RelayEvent): string {
     case 'TELEGRAM_REJECTED': return `Telegram rejected by ${event.peerId}: ${event.reason}`;
     case 'STATUS_CHANGED': return `Relay state: ${event.status}`;
     case 'RADIO_ERROR': return `Radio error: ${event.message}`;
+    case 'GATEWAY_CONNECTIVITY': return 'Internet connection available for gateway sync';
   }
 }
 
