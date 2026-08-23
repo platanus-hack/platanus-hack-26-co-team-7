@@ -63,8 +63,10 @@ def _canonical(telegram: TelegramInput) -> bytes:
     def texts(values: list[str]) -> str: return ",".join(sorted(values))
     vital = telegram.vital
     verify = telegram.verify
+    loc_lat = f"{telegram.location.lat:.6f}" if telegram.location is not None else null
+    loc_lng = f"{telegram.location.lng:.6f}" if telegram.location is not None else null
     fields = [telegram.v, telegram.id, telegram.user_id, telegram.event_id, telegram.event.value, telegram.status.value, telegram.severity,
-              f"{telegram.location.lat:.6f}", f"{telegram.location.lng:.6f}", telegram.timestamp, telegram.origin]
+              loc_lat, loc_lng, telegram.timestamp, telegram.origin]
     fields += [null] if vital is None else [vital.name, vital.age, vital.blood, texts(vital.allergies), texts(vital.conditions), texts(vital.medications), vital.disability.value, str(vital.pregnant).lower()]
     fields += [null] if verify is None else [verify.question_id, verify.answer_hash]
     fields += [telegram.key_id, telegram.public_key]
@@ -124,7 +126,7 @@ def upload_batch(payload: Annotated[TelegramBatchRequest, Depends(_read_bounded_
             if person_state.current_status is PersonStatus.SAFE and telegram.status is PersonStatus.SAFE:
                 results[index] = TelegramBatchItemResult(index=index, id=str(telegram.id), outcome="ignored_safe")
                 continue
-            inserted_id = session.execute(insert(GatewayTelegramRecord).values(id=telegram.id, event_id=telegram.event_id, user_id=telegram.user_id, gateway_user_id=gateway_user_id, status=telegram.status, event_type=telegram.event, lat=telegram.location.lat, lng=telegram.location.lng, origin_ts=_timestamp(telegram.timestamp), severity=telegram.severity, hop=telegram.hop, ttl=telegram.ttl, origin_device=telegram.origin, key_id=telegram.key_id.casefold(), signature=telegram.signature, question_id=telegram.verify.question_id if telegram.verify else None, answer_hash=telegram.verify.answer_hash if telegram.verify else None, payload=telegram.model_dump(mode="json")).on_conflict_do_nothing(index_elements=[GatewayTelegramRecord.id]).returning(GatewayTelegramRecord.id)).scalar_one_or_none()
+            inserted_id = session.execute(insert(GatewayTelegramRecord).values(id=telegram.id, event_id=telegram.event_id, user_id=telegram.user_id, gateway_user_id=gateway_user_id, status=telegram.status, event_type=telegram.event, lat=telegram.location.lat if telegram.location is not None else None, lng=telegram.location.lng if telegram.location is not None else None, origin_ts=_timestamp(telegram.timestamp), severity=telegram.severity, hop=telegram.hop, ttl=telegram.ttl, origin_device=telegram.origin, key_id=telegram.key_id.casefold(), signature=telegram.signature, question_id=telegram.verify.question_id if telegram.verify else None, answer_hash=telegram.verify.answer_hash if telegram.verify else None, payload=telegram.model_dump(mode="json")).on_conflict_do_nothing(index_elements=[GatewayTelegramRecord.id]).returning(GatewayTelegramRecord.id)).scalar_one_or_none()
             if inserted_id is None:
                 results[index] = TelegramBatchItemResult(index=index, id=str(telegram.id), outcome="duplicate")
                 continue
@@ -136,8 +138,8 @@ def upload_batch(payload: Annotated[TelegramBatchRequest, Depends(_read_bounded_
                     person_state.current_status = PersonStatus.NEED_HELP
             elif person_state.emergency_timestamp is None or _timestamp(telegram.timestamp) >= person_state.emergency_timestamp:
                 person_state.emergency_status = PersonStatus.EMERGENCY
-                person_state.emergency_lat = telegram.location.lat
-                person_state.emergency_lng = telegram.location.lng
+                person_state.emergency_lat = telegram.location.lat if telegram.location is not None else None
+                person_state.emergency_lng = telegram.location.lng if telegram.location is not None else None
                 person_state.emergency_timestamp = _timestamp(telegram.timestamp)
             person_state.last_telegram_id = telegram.id
             results[index] = TelegramBatchItemResult(index=index, id=str(telegram.id), outcome="accepted")

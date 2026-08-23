@@ -61,6 +61,10 @@ interface ZiroRelayNativeModule {
   getDeviceIdentity(): string;
   scheduleGatewaySync(): Promise<void>;
   activateEmergency(event: string): Promise<void>;
+  setEmergencyUserStatus(status: string): Promise<void>;
+  getRadioState(): { bluetoothEnabled: boolean; wifiEnabled: boolean };
+  openBluetoothSettings(): void;
+  openWifiSettings(): void;
   addListener(event: 'onRelayEvent', listener: (payload: RelayEvent) => void): EventSubscription;
 }
 
@@ -133,6 +137,19 @@ export async function getGatewaySyncSnapshot(): Promise<GatewaySyncSnapshot> { r
 export function getDeviceIdentity(): DeviceIdentity { return JSON.parse(native.getDeviceIdentity()) as DeviceIdentity; }
 export function scheduleGatewaySync(): Promise<void> { return native.scheduleGatewaySync(); }
 export async function activateEmergency(event: ActiveEmergencyEvent): Promise<void> { await native.activateEmergency(JSON.stringify(event)); }
+export async function setEmergencyUserStatus(status: string): Promise<void> { await native.setEmergencyUserStatus(status); }
+
+export function getRadioState(): { bluetoothEnabled: boolean; wifiEnabled: boolean } {
+  return native.getRadioState();
+}
+
+export function openBluetoothSettings(): void {
+  native.openBluetoothSettings();
+}
+
+export function openWifiSettings(): void {
+  native.openWifiSettings();
+}
 
 /**
  * Requests the runtime permissions Nearby Connections needs to discover and advertise.

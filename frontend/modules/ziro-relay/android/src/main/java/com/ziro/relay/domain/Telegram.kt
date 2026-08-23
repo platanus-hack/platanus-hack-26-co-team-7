@@ -30,7 +30,7 @@ data class Telegram(
     val status: PersonStatus,
     /** 1 = minor, 5 = catastrophic. Drives rescuer triage ordering. */
     val severity: Int = DEFAULT_SEVERITY,
-    val location: GeoPoint,
+    val location: GeoPoint? = null,
     /** Epoch seconds, set by the ORIGIN. Not when this node received it. */
     val timestamp: Long,
     /** Hops already travelled. Starts at 0, incremented by each receiving node. */

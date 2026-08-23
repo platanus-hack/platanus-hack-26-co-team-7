@@ -52,7 +52,7 @@ class TelegramInput(BaseModel):
     event: GatewayEventType
     status: PersonStatus
     severity: Annotated[int, Field(ge=1, le=5)]
-    location: TelegramLocation
+    location: TelegramLocation | None = None
     timestamp: Annotated[int, Field(ge=0, le=4_102_444_800)]
     hop: Annotated[int, Field(ge=0, le=255)]
     ttl: Annotated[int, Field(ge=0, le=8)]
