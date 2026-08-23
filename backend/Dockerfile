@@ -13,13 +13,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first (layer cache) — copy only the build manifest so
-# code changes don't force a full dependency reinstall.
+# Copy only the application and migration sources required at runtime.
 COPY pyproject.toml ./
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
-COPY scripts ./scripts
 
 RUN pip install .
 

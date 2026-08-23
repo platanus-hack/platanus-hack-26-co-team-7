@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings as core_settings
 from app.core.database import get_session
-from app.models.event import EventType
-from app.modules.event_activation.service import activate_event
+from app.models.event import EventCloseReason, EventType
+from app.modules.event_activation.service import activate_event, close_event
 from app.modules.mobile_identity.config import settings
 from app.modules.mobile_identity.security import bearer_scheme, require_user_id, utcnow
 
@@ -116,3 +116,41 @@ async def trigger_web_demo() -> WebTriggerResponse:
         place=_DEMO_PLACE,
         cells=counts["cells"],
     )
+
+
+class WebStopResponse(BaseModel):
+    event_id: str
+    closed: bool
+
+
+@web_router.post("/stop", response_model=WebStopResponse)
+async def stop_web_demo(session: Session = Depends(get_session)) -> WebStopResponse:
+    """Close the open demo event, mirroring trigger_web_demo in reverse.
+
+    ``closed`` is false when the demo event was already closed (or never
+    triggered) — the button can always be pressed safely.
+    """
+    from app.core.ws import manager as ws_manager
+    from scripts.seed_demo import DEMO_EVENT_ID
+
+    if not core_settings.demo_web_trigger_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Web demo trigger is disabled."
+        )
+
+    with session.begin():
+        event = close_event(
+            session,
+            event_id=DEMO_EVENT_ID,
+            closed_at=utcnow(),
+            reason=EventCloseReason.MANUAL,
+        )
+    closed = event is not None
+
+    if closed:
+        try:
+            await ws_manager.broadcast({"type": "EVENT_CLOSED", "event_id": DEMO_EVENT_ID})
+        except Exception:  # noqa: BLE001 - a WS failure must not lose the closure
+            logger.exception("web demo stop: EVENT_CLOSED broadcast failed")
+
+    return WebStopResponse(event_id=DEMO_EVENT_ID, closed=closed)

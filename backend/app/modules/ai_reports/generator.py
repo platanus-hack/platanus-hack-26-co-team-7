@@ -35,12 +35,16 @@ _SYSTEM_PROMPT = (
     "Recibes un snapshot SQL determinista y acciones gubernamentales reales de "
     "la UNGRD. Narras SOLO con los datos entregados: NUNCA inventas cifras ni "
     "acciones. Si un dato no aparece en el snapshot, no lo menciones. "
+    "Usa lenguaje claro para operadores humanos, sin tecnicismos ni valores "
+    "internos: nunca menciones intensidad, celdas, índices H3, identificadores "
+    "técnicos ni códigos; habla de 'zonas' o 'áreas' afectadas. "
     'Responde EXCLUSIVAMENTE con JSON válido del esquema v1: '
     '{"version":1,"title":str,"summary":str,"recommendations":[str],'
     '"figures":{"cells_active":int,"people_in_danger":int,"gov_actions_count":int}}. '
     "En figures reutiliza EXACTAMENTE los números del snapshot "
-    "(cells_active=totals.active_cells, people_in_danger=totals.total_persons, "
-    "gov_actions_count=cantidad de gov_actions). Título y resumen en español."
+    "(cells_active=totals.active_zones, people_in_danger=totals.total_persons, "
+    "gov_actions_count=cantidad de gov_actions). Título y resumen en español, "
+    "sin valores internos."
 )
 
 
@@ -54,7 +58,7 @@ def _authoritative_figures(snapshot: dict, gov_actions: list[dict[str, Any]]) ->
     """
     totals = snapshot["totals"]
     return {
-        "cells_active": int(totals["active_cells"]),
+        "cells_active": int(totals["active_zones"]),
         "people_in_danger": int(totals["total_persons"]),
         "gov_actions_count": len(gov_actions),
     }
@@ -63,12 +67,14 @@ def _authoritative_figures(snapshot: dict, gov_actions: list[dict[str, Any]]) ->
 def _fallback_content(snapshot: dict, gov_actions: list[dict[str, Any]]) -> dict:
     """Deterministic Spanish template used when the LLM is unavailable."""
     totals = snapshot["totals"]
-    top_cells = snapshot["cells"][:3]
-    cell_lines = "; ".join(
-        f"celda {cell['h3_index']} con {cell['person_count']} personas "
-        f"(intensidad {cell['intensity']:.2f})"
-        for cell in top_cells
-    )
+    zones = snapshot["zones"]
+    zone_note = ""
+    if zones:
+        top = zones[0]["person_count"]
+        zone_note = f" La zona con mayor concentración reúne {top} personas"
+        remaining = sum(zone["person_count"] for zone in zones[1:])
+        zone_note += "." if remaining == 0 else f" y las restantes {remaining}."
+
     gov_summary = ""
     if gov_actions:
         first = gov_actions[0]
@@ -80,15 +86,14 @@ def _fallback_content(snapshot: dict, gov_actions: list[dict[str, Any]]) -> dict
 
     return {
         "version": 1,
-        "title": f"Reporte de situación — {snapshot['event_id']}",
+        "title": "Reporte de situación",
         "summary": (
-            f"Evento abierto {snapshot['event_id']}: {totals['total_persons']} "
-            f"personas en peligro distribuidas en {totals['active_cells']} celdas "
-            f"activas. Zonas más críticas: {cell_lines}.{gov_summary}"
+            f"{totals['total_persons']} personas en peligro distribuidas en "
+            f"{totals['active_zones']} zonas.{zone_note}{gov_summary}"
         ),
         "recommendations": [
-            "Priorizar el despacho de ayuda a las celdas con mayor número de personas.",
-            "Mantener la difusión por la red de nodos hasta confirmar estados SAFE.",
+            "Priorizar el despacho de ayuda a las zonas con mayor número de personas en peligro.",
+            "Mantener la difusión por la red de nodos hasta confirmar estados seguros.",
             "Continuar la coordinación con la UNGRD según las acciones reportadas.",
         ],
         "figures": _authoritative_figures(snapshot, gov_actions),
@@ -155,7 +160,11 @@ async def _call_llm(snapshot: dict, gov_actions: list[dict[str, Any]]) -> dict |
                         {
                             "role": "user",
                             "content": json.dumps(
-                                {"snapshot": snapshot, "gov_actions": gov_actions},
+                                {
+                                    "totals": snapshot["totals"],
+                                    "zones": snapshot["zones"],
+                                    "gov_actions": gov_actions,
+                                },
                                 ensure_ascii=False,
                             ),
                         },
