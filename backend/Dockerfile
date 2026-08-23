@@ -16,6 +16,7 @@ WORKDIR /app
 # Copy only the application and migration sources required at runtime.
 COPY pyproject.toml ./
 COPY app ./app
+COPY scripts ./scripts
 COPY alembic ./alembic
 COPY alembic.ini ./
 
