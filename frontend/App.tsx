@@ -1,16 +1,22 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { BLOOD_RH, BLOOD_TYPES, DISABILITIES, DOCUMENT_TYPES, type ProfileInput } from 'ziro-relay';
+import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold, Inter_900Black } from '@expo-google-fonts/inter';
 
 import { HomeScreen } from './src/screens/HomeScreen';
 import { ApiConfigurationError, getBuildApiBaseUrl, isBuildDemoTriggerEnabled, validateApiBaseUrl } from './src/api/apiConfiguration';
 import { PrivateApi } from './src/api/privateApi';
 import { createRelayClient, getNativeRelayConfigurationError } from './src/native/relayClient';
+import { C, shared, F, SAFE_TOP } from './src/theme';
 
 export default function App() {
+  const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold, Inter_900Black });
+
   const nativeRelayConfigurationError = getNativeRelayConfigurationError();
   if (nativeRelayConfigurationError) return <ConfigurationErrorScreen message={nativeRelayConfigurationError} />;
+
+  if (!fontsLoaded) return <SafeAreaView style={[shared.screenBg, { justifyContent: 'center', alignItems: 'center' }]}><StatusBar style="light" /><ActivityIndicator color={C.accent} size="large" /></SafeAreaView>;
 
   try {
     return <ConfiguredApp apiBaseUrl={getBuildApiBaseUrl()} />;
@@ -59,7 +65,7 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') reconcile(); });
     return () => { active = false; clearInterval(interval); subscription.remove(); };
   }, [api, profile, relay]);
-  const register = async () => { const validation = validateRegistration(registration, login.password); if (validation) return Alert.alert('Registration incomplete', validation); try { const next = await api.register(registration, login.password); await relay.saveProfile(next); setProfile(next); } catch (error) { setSessionError(error instanceof Error ? error.message : 'Registration failed.'); } };
+  const register = async () => { const validation = validateRegistration(registration, login.password); if (validation) return Alert.alert('Registration incomplete', validation); try { const next = await api.register(registration, login.password); await relay.saveProfile(next); setProfile(next); } catch (error) { const msg = error instanceof Error ? error.message : 'Registration failed.'; setSessionError(msg); Alert.alert('Registration failed', msg); } };
   const logout = async () => { await api.logout(); setProfile(null); setLogin({ docType: 'CC', docNumber: '', password: '' }); setSessionError(null); };
   const triggerDemo = async () => {
     activationKey.current ??= createIdempotencyKey();
@@ -74,39 +80,460 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
   };
   const saveUrl = () => { try { const validBaseUrl = validateApiBaseUrl(baseUrlInput, 'API base URL'); relay.saveApiBaseUrl(validBaseUrl); setBaseUrl(validBaseUrl); setBaseUrlInput(validBaseUrl); Alert.alert('Saved', 'The API URL is stored locally (not as a secret). The build-time environment URL is used again when the app restarts.'); } catch (error) { Alert.alert('Invalid URL', error instanceof Error ? error.message : 'Use http:// or https://'); } };
   const saveProfile = async (next: ProfileInput) => { const saved = await api.saveProfile(next); await relay.saveProfile(saved); setProfile(saved); };
-  if (loading) return <SafeAreaView style={styles.root}><Text style={styles.loading}>Restoring secure session…</Text></SafeAreaView>;
-  if (!profile) return <SafeAreaView style={styles.root}><ScrollView contentContainerStyle={styles.auth}><Text style={styles.title}>Replica private access</Text>{sessionError ? <Text style={styles.error}>{sessionError}</Text> : null}<Text>API base URL</Text><TextInput style={styles.input} value={baseUrlInput} onChangeText={setBaseUrlInput} autoCapitalize="none" placeholder="https://api.example.com" /><Pressable style={styles.button} onPress={saveUrl}><Text style={styles.buttonText}>Save API URL</Text></Pressable>{registering ? <RegistrationForm profile={registration} onChange={setRegistration} password={login.password} onPasswordChange={(password) => setLogin({ ...login, password })} onRegister={() => void register()} /> : <><Text>Document type</Text><TextInput style={styles.input} value={login.docType} onChangeText={(docType) => setLogin({ ...login, docType: docType as ProfileInput['docType'] })} /><Text>Document number</Text><TextInput style={styles.input} value={login.docNumber} onChangeText={(docNumber) => setLogin({ ...login, docNumber })} /><Text>Password</Text><TextInput style={styles.input} value={login.password} secureTextEntry onChangeText={(password) => setLogin({ ...login, password })} /><Pressable style={styles.button} onPress={() => void authenticate()}><Text style={styles.buttonText}>Login</Text></Pressable></>}<Pressable onPress={() => setRegistering(!registering)}><Text>{registering ? 'I already have an account' : 'Create private profile'}</Text></Pressable><Text style={styles.help}>Android development or release build required. Expo Go is unsupported.</Text></ScrollView></SafeAreaView>;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[shared.screenBg, { justifyContent: 'center', alignItems: 'center', paddingTop: SAFE_TOP }]}>
+        <StatusBar style="light" />
+        <Text style={[shared.text, { textAlign: 'center', margin: 24 }]}>Restoring secure session…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={[shared.screenBg, { backgroundColor: C.bg, paddingTop: SAFE_TOP }]}>
+        <StatusBar style="light" />
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 28, paddingTop: 48, paddingBottom: 56, gap: 0 }} style={{ backgroundColor: C.bg }}>
+
+          {/* Brand area */}
+          <View style={{ alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <Text style={{ fontFamily: F.black, color: C.text, fontSize: 44, letterSpacing: 8, textTransform: 'uppercase' }}>REPLICA</Text>
+            <View style={{ width: '80%', height: 1, backgroundColor: C.cardBorder }} />
+            <Text style={{ fontFamily: F.semibold, color: C.accent, fontSize: 12, letterSpacing: 3, textTransform: 'uppercase' }}>Emergency Network</Text>
+            <Text style={{ fontFamily: F.regular, color: C.textSecondary, fontSize: 16, lineHeight: 24, textAlign: 'center' }}>
+              {'The information survives\neven when the network doesn\'t.'}
+            </Text>
+          </View>
+
+          {sessionError ? <Text style={[shared.error, { marginBottom: 12, textAlign: 'center' }]}>{sessionError}</Text> : null}
+
+          {registering ? (
+            <View style={{ gap: 20, marginTop: 24 }}>
+              <RegistrationForm
+                profile={registration}
+                onChange={setRegistration}
+                password={login.password}
+                onPasswordChange={(password) => setLogin({ ...login, password })}
+                onRegister={() => void register()}
+              />
+            </View>
+          ) : (
+            /* Login form — directly on dark background, no card wrapper */
+            <View style={{ gap: 20, marginTop: 40 }}>
+
+              <Field label="Document Type">
+                <View style={shared.chips}>
+                  {Object.values(DOCUMENT_TYPES).map((opt) => (
+                    <Pressable
+                      key={opt}
+                      style={[shared.chip, login.docType === opt && shared.chipActive]}
+                      onPress={() => setLogin({ ...login, docType: opt as ProfileInput['docType'] })}
+                    >
+                      <Text style={login.docType === opt ? shared.chipTextActive : shared.chipText}>{opt}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </Field>
+
+              <Field label="Document Number">
+                <TextInput
+                  style={shared.input}
+                  value={login.docNumber}
+                  onChangeText={(docNumber) => setLogin({ ...login, docNumber })}
+                  keyboardType="numeric"
+                  placeholderTextColor={C.textMuted}
+                  placeholder="Enter your document number"
+                />
+              </Field>
+
+              <Field label="Password">
+                <TextInput
+                  style={shared.input}
+                  value={login.password}
+                  secureTextEntry
+                  onChangeText={(password) => setLogin({ ...login, password })}
+                  placeholderTextColor={C.textMuted}
+                  placeholder="••••••••••••"
+                />
+              </Field>
+
+              {/* SIGN IN — outlined premium button */}
+              <Pressable
+                style={{
+                  backgroundColor: '#1a1a1a',
+                  borderWidth: 1,
+                  borderColor: C.accent,
+                  paddingVertical: 18,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  marginTop: 4,
+                }}
+                onPress={() => void authenticate()}
+              >
+                <Text style={{ fontFamily: F.bold, color: C.text, fontSize: 14, letterSpacing: 2, textTransform: 'uppercase' }}>Sign In</Text>
+              </Pressable>
+
+              {/* or divider */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: C.cardBorder }} />
+                <Text style={{ color: C.textMuted, fontFamily: F.regular, fontSize: 13 }}>or</Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: C.cardBorder }} />
+              </View>
+
+              {/* Create profile — outlined subtle button */}
+              <Pressable
+                style={{
+                  backgroundColor: 'transparent',
+                  borderWidth: 1,
+                  borderColor: C.cardBorder,
+                  paddingVertical: 18,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                }}
+                onPress={() => setRegistering(true)}
+              >
+                <Text style={{ fontFamily: F.semibold, color: C.textSecondary, fontSize: 14, letterSpacing: 0.5 }}>Create private profile</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* Back to login when in registration mode */}
+          {registering ? (
+            <Pressable style={{ alignItems: 'center', paddingVertical: 16, marginTop: 8 }} onPress={() => setRegistering(false)}>
+              <Text style={{ fontFamily: F.semibold, color: C.accent, fontSize: 13, letterSpacing: 0.5 }}>I already have an account</Text>
+            </Pressable>
+          ) : null}
+
+          {/* API URL — collapsible section at the bottom */}
+          <ApiUrlConfig baseUrlInput={baseUrlInput} onChangeText={setBaseUrlInput} onSave={saveUrl} />
+
+          <Text style={{ fontFamily: F.regular, color: C.textMuted, fontSize: 11, textAlign: 'center', marginTop: 8 }}>
+            Android development or release build required.
+          </Text>
+
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar style="auto" />
-      <HomeScreen onProfileSave={saveProfile} onLogout={logout} api={api} showDemoTrigger={isBuildDemoTriggerEnabled()} emergencyStatus={emergencyStatus} onTriggerDemo={() => void triggerDemo()} />
+    <SafeAreaView style={[shared.screenBg, { backgroundColor: C.bg, paddingTop: SAFE_TOP }]}>
+      <StatusBar style="light" />
+      <HomeScreen
+        onProfileSave={saveProfile}
+        onLogout={logout}
+        api={api}
+        showDemoTrigger={isBuildDemoTriggerEnabled()}
+        emergencyStatus={emergencyStatus}
+        onTriggerDemo={() => void triggerDemo()}
+      />
     </SafeAreaView>
   );
 }
 
 function ConfigurationErrorScreen({ message }: { message: string }) {
-  return <SafeAreaView style={styles.root}><View style={styles.auth}><Text style={styles.title}>Configuration required</Text><Text style={styles.warning}>{message}</Text><Text style={styles.help}>No simulated relay, profile, session, peer, ledger, or Telegram data is available in this build.</Text></View></SafeAreaView>;
+  return (
+    <SafeAreaView style={[shared.screenBg, { justifyContent: 'center', paddingTop: SAFE_TOP }]}>
+      <StatusBar style="light" />
+      <View style={{ padding: 24, gap: 16 }}>
+        <Text style={{ fontFamily: F.extrabold, color: C.text, fontSize: 22 }}>Configuration required</Text>
+        <Text style={shared.error}>{message}</Text>
+        <Text style={shared.textSecondary}>
+          No simulated relay, profile, session, peer, ledger, or Telegram data is available in this build.
+        </Text>
+      </View>
+    </SafeAreaView>
+  );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  loading: { margin: 24 },
-  auth: { padding: 20, gap: 10 },
-  title: { fontSize: 26, fontWeight: '800' },
-  input: { borderWidth: 1, borderColor: '#94a3b8', padding: 10, borderRadius: 6 },
-  button: { backgroundColor: '#0f766e', padding: 12, borderRadius: 6 },
-  buttonText: { color: 'white', textAlign: 'center', fontWeight: '700' },
-  warning: { color: '#b45309' },
-  error: { color: '#b91c1c' },
-  help: { color: '#475569' },
-  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-});
+/** Labeled wrapper for form fields */
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={[shared.label, { fontFamily: F.regular }]}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+/** Collapsible API URL configuration — shown at the bottom of the login screen */
+function ApiUrlConfig({
+  baseUrlInput,
+  onChangeText,
+  onSave,
+}: {
+  baseUrlInput: string;
+  onChangeText: (value: string) => void;
+  onSave: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <View style={{ marginTop: 24, gap: 10 }}>
+      <Pressable
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 8 }}
+        onPress={() => setExpanded(!expanded)}
+      >
+        <Text style={{ fontFamily: F.regular, color: C.textMuted, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' }}>
+          API Server {expanded ? '▲' : '▼'}
+        </Text>
+      </Pressable>
+      {expanded ? (
+        <View style={{ gap: 10 }}>
+          <TextInput
+            style={shared.input}
+            value={baseUrlInput}
+            onChangeText={onChangeText}
+            autoCapitalize="none"
+            placeholder="https://api.example.com"
+            placeholderTextColor={C.textMuted}
+          />
+          <Pressable style={shared.btnSecondary} onPress={onSave}>
+            <Text style={shared.btnSecondaryText}>Save API URL</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function RegistrationForm({
+  profile,
+  onChange,
+  password,
+  onPasswordChange,
+  onRegister,
+}: {
+  profile: ProfileInput;
+  onChange: (profile: ProfileInput) => void;
+  password: string;
+  onPasswordChange: (password: string) => void;
+  onRegister: () => void;
+}) {
+  const contact = profile.emergencyContacts[0];
+
+  const textField = (
+    label: string,
+    key: 'fullName' | 'docNumber' | 'birthDate' | 'questionId' | 'identityAnswer',
+    opts?: { placeholder?: string; secure?: boolean },
+  ) => (
+    <Field key={key} label={label}>
+      <TextInput
+        style={shared.input}
+        value={profile[key] ?? ''}
+        onChangeText={(value) => onChange({ ...profile, [key]: value })}
+        secureTextEntry={opts?.secure ?? key === 'identityAnswer'}
+        placeholder={opts?.placeholder}
+        placeholderTextColor={C.textMuted}
+      />
+    </Field>
+  );
+
+  const listField = (label: string, key: 'allergies' | 'chronicConditions' | 'medications') => (
+    <Field key={key} label={label}>
+      <TextInput
+        style={shared.input}
+        value={profile[key].join(', ')}
+        onChangeText={(value) =>
+          onChange({ ...profile, [key]: value.split(',').map((item) => item.trim()).filter(Boolean) })
+        }
+        placeholder="write none if none"
+        placeholderTextColor={C.textMuted}
+      />
+    </Field>
+  );
+
+  return (
+    <>
+      {/* IDENTITY */}
+      <View style={shared.card}>
+        <Text style={[shared.label, { marginBottom: 4 }]}>Identity</Text>
+
+        {textField('Full name *', 'fullName')}
+
+        <Field label="Document type *">
+          <View style={shared.chips}>
+            {Object.values(DOCUMENT_TYPES).map((opt) => (
+              <Pressable
+                key={opt}
+                style={[shared.chip, profile.docType === opt && shared.chipActive]}
+                onPress={() => onChange({ ...profile, docType: opt as ProfileInput['docType'] })}
+              >
+                <Text style={profile.docType === opt ? shared.chipTextActive : shared.chipText}>{opt}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Field>
+
+        {textField('Document number *', 'docNumber')}
+        {textField('Birth date *', 'birthDate', { placeholder: 'YYYY-MM-DD' })}
+      </View>
+
+      <View style={shared.divider} />
+
+      {/* MEDICAL */}
+      <View style={shared.card}>
+        <Text style={[shared.label, { marginBottom: 4 }]}>Medical</Text>
+
+        <Field label="Blood group *">
+          <View style={shared.chips}>
+            {Object.values(BLOOD_TYPES).map((opt) => (
+              <Pressable
+                key={opt}
+                style={[shared.chip, profile.bloodType === opt && shared.chipActive]}
+                onPress={() => onChange({ ...profile, bloodType: opt as ProfileInput['bloodType'] })}
+              >
+                <Text style={profile.bloodType === opt ? shared.chipTextActive : shared.chipText}>{opt}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Field>
+
+        <Field label="Rh factor *">
+          <View style={shared.chips}>
+            {Object.values(BLOOD_RH).map((opt) => (
+              <Pressable
+                key={opt}
+                style={[shared.chip, profile.bloodRh === opt && shared.chipActive]}
+                onPress={() => onChange({ ...profile, bloodRh: opt as ProfileInput['bloodRh'] })}
+              >
+                <Text style={profile.bloodRh === opt ? shared.chipTextActive : shared.chipText}>{opt}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Field>
+
+        {listField('Allergies *', 'allergies')}
+        {listField('Chronic conditions *', 'chronicConditions')}
+        {listField('Medications *', 'medications')}
+
+        <Field label="Disability *">
+          <View style={shared.chips}>
+            {Object.values(DISABILITIES).map((opt) => (
+              <Pressable
+                key={opt}
+                style={[shared.chip, profile.disability === opt && shared.chipActive]}
+                onPress={() => onChange({ ...profile, disability: opt as ProfileInput['disability'] })}
+              >
+                <Text style={profile.disability === opt ? shared.chipTextActive : shared.chipText}>{opt}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Field>
+
+        <View style={shared.switchRow}>
+          <Text style={shared.text}>Pregnant *</Text>
+          <Switch
+            value={profile.isPregnant}
+            onValueChange={(isPregnant) => onChange({ ...profile, isPregnant })}
+            trackColor={{ false: C.inputBorder, true: C.accent }}
+            thumbColor={profile.isPregnant ? C.bg : C.textSecondary}
+          />
+        </View>
+      </View>
+
+      <View style={shared.divider} />
+
+      {/* EMERGENCY CONTACT */}
+      <View style={shared.card}>
+        <Text style={[shared.label, { marginBottom: 4 }]}>Emergency contact</Text>
+
+        <Field label="Name *">
+          <TextInput
+            style={shared.input}
+            value={contact.name}
+            onChangeText={(name) => onChange({ ...profile, emergencyContacts: [{ ...contact, name }] })}
+            placeholderTextColor={C.textMuted}
+            placeholder="Full name"
+          />
+        </Field>
+
+        <Field label="Phone *">
+          <TextInput
+            style={shared.input}
+            value={contact.phone}
+            onChangeText={(phone) => onChange({ ...profile, emergencyContacts: [{ ...contact, phone }] })}
+            keyboardType="phone-pad"
+            placeholderTextColor={C.textMuted}
+            placeholder="+573001234567"
+          />
+        </Field>
+
+        <Field label="Relationship *">
+          <TextInput
+            style={shared.input}
+            value={contact.relationship}
+            onChangeText={(relationship) => onChange({ ...profile, emergencyContacts: [{ ...contact, relationship }] })}
+            placeholderTextColor={C.textMuted}
+            placeholder="e.g. Mother, Spouse"
+          />
+        </Field>
+      </View>
+
+      <View style={shared.divider} />
+
+      {/* SECURITY */}
+      <View style={shared.card}>
+        <Text style={[shared.label, { marginBottom: 4 }]}>Security</Text>
+
+        {textField('Verification question ID *', 'questionId', { placeholder: 'Question identifier' })}
+        {textField('SAFE answer *', 'identityAnswer', { secure: true, placeholder: '••••••••' })}
+
+        <Field label="Password (12+ characters) *">
+          <TextInput
+            style={shared.input}
+            value={password}
+            onChangeText={onPasswordChange}
+            secureTextEntry
+            placeholderTextColor={C.textMuted}
+            placeholder="••••••••••••"
+          />
+        </Field>
+      </View>
+
+      <Pressable style={shared.btnPrimary} onPress={onRegister}>
+        <Text style={shared.btnPrimaryText}>Register profile and device key</Text>
+      </Pressable>
+    </>
+  );
+}
 
 function createIdempotencyKey(): string {
   const random = Math.random().toString(16).slice(2);
   return `${Date.now().toString(16)}-${random}`;
 }
 
-function blankProfile(): ProfileInput { return { userId: 'pending-registration', fullName: '', docType: '' as ProfileInput['docType'], docNumber: '', birthDate: '', bloodType: '' as ProfileInput['bloodType'], bloodRh: '' as ProfileInput['bloodRh'], allergies: [], chronicConditions: [], medications: [], disability: '' as ProfileInput['disability'], isPregnant: false, weightKg: null, eps: null, emergencyContacts: [{ name: '', phone: '', relationship: '' }], questionId: '', identityAnswer: '' }; }
-function RegistrationForm({ profile, onChange, password, onPasswordChange, onRegister }: { profile: ProfileInput; onChange: (profile: ProfileInput) => void; password: string; onPasswordChange: (password: string) => void; onRegister: () => void }) { const field = (label: string, key: 'fullName' | 'docNumber' | 'birthDate' | 'questionId' | 'identityAnswer') => <View key={key}><Text>{label}</Text><TextInput style={styles.input} value={profile[key] ?? ''} onChangeText={(value) => onChange({ ...profile, [key]: value })} secureTextEntry={key === 'identityAnswer'} /></View>; const list = (label: string, key: 'allergies' | 'chronicConditions' | 'medications') => <View><Text>{label} (write “none” if none)</Text><TextInput style={styles.input} value={profile[key].join(', ')} onChangeText={(value) => onChange({ ...profile, [key]: value.split(',').map((item) => item.trim()).filter(Boolean) })} /></View>; const contact = profile.emergencyContacts[0]; return <>{field('Full name *', 'fullName')}<Text>Document type *</Text><TextInput style={styles.input} value={profile.docType} onChangeText={(value) => onChange({ ...profile, docType: value as ProfileInput['docType'] })} placeholder={Object.values(DOCUMENT_TYPES).join('/')} />{field('Document number *', 'docNumber')}{field('Birth date (YYYY-MM-DD) *', 'birthDate')}<Text>Blood group *</Text><TextInput style={styles.input} value={profile.bloodType} onChangeText={(value) => onChange({ ...profile, bloodType: value as ProfileInput['bloodType'] })} placeholder={Object.values(BLOOD_TYPES).join('/')} /><Text>Rh *</Text><TextInput style={styles.input} value={profile.bloodRh} onChangeText={(value) => onChange({ ...profile, bloodRh: value as ProfileInput['bloodRh'] })} placeholder={Object.values(BLOOD_RH).join('/')} />{list('Allergies *', 'allergies')}{list('Chronic conditions *', 'chronicConditions')}{list('Medication *', 'medications')}<Text>Disability *</Text><TextInput style={styles.input} value={profile.disability} onChangeText={(value) => onChange({ ...profile, disability: value as ProfileInput['disability'] })} placeholder={Object.values(DISABILITIES).join('/')} /><View style={styles.switchRow}><Text>Pregnant *</Text><Switch value={profile.isPregnant} onValueChange={(isPregnant) => onChange({ ...profile, isPregnant })} /></View><Text>Emergency contact name *</Text><TextInput style={styles.input} value={contact.name} onChangeText={(name) => onChange({ ...profile, emergencyContacts: [{ ...contact, name }] })} /><Text>Emergency contact phone *</Text><TextInput style={styles.input} value={contact.phone} onChangeText={(phone) => onChange({ ...profile, emergencyContacts: [{ ...contact, phone }] })} /><Text>Emergency contact relationship *</Text><TextInput style={styles.input} value={contact.relationship} onChangeText={(relationship) => onChange({ ...profile, emergencyContacts: [{ ...contact, relationship }] })} />{field('Verification question ID *', 'questionId')}{field('SAFE answer *', 'identityAnswer')}<Text>Password (12+ characters) *</Text><TextInput style={styles.input} value={password} onChangeText={onPasswordChange} secureTextEntry /><Pressable style={styles.button} onPress={onRegister}><Text style={styles.buttonText}>Register profile and device key</Text></Pressable></>; }
-function validateRegistration(profile: ProfileInput, password: string): string | null { if (!profile.fullName.trim() || !profile.docNumber.trim() || !profile.birthDate.trim() || !profile.questionId.trim() || !profile.identityAnswer?.trim() || password.length < 12) return 'Complete all identity, SAFE answer, and password fields.'; if (!Object.values(DOCUMENT_TYPES).includes(profile.docType) || !Object.values(BLOOD_TYPES).includes(profile.bloodType) || !Object.values(BLOOD_RH).includes(profile.bloodRh) || !Object.values(DISABILITIES).includes(profile.disability)) return 'Select document, blood/Rh, and disability values explicitly.'; if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.birthDate)) return 'Birth date must use YYYY-MM-DD.'; if (profile.allergies.length === 0 || profile.chronicConditions.length === 0 || profile.medications.length === 0) return 'Confirm allergies, conditions, and medication. Write “none” when applicable.'; const contact = profile.emergencyContacts[0]; if (!contact?.name.trim() || !contact.phone.trim() || !contact.relationship.trim()) return 'A complete emergency contact is required.'; return null; }
+function blankProfile(): ProfileInput {
+  return {
+    userId: 'pending-registration',
+    fullName: '',
+    docType: '' as ProfileInput['docType'],
+    docNumber: '',
+    birthDate: '',
+    bloodType: '' as ProfileInput['bloodType'],
+    bloodRh: '' as ProfileInput['bloodRh'],
+    allergies: [],
+    chronicConditions: [],
+    medications: [],
+    disability: '' as ProfileInput['disability'],
+    isPregnant: false,
+    weightKg: null,
+    eps: null,
+    emergencyContacts: [{ name: '', phone: '', relationship: '' }],
+    questionId: '',
+    identityAnswer: '',
+  };
+}
+
+function validateRegistration(profile: ProfileInput, password: string): string | null {
+  if (!profile.fullName.trim() || !profile.docNumber.trim() || !profile.birthDate.trim() || !profile.questionId.trim() || !profile.identityAnswer?.trim() || password.length < 12)
+    return 'Complete all identity, SAFE answer, and password fields.';
+  if (!Object.values(DOCUMENT_TYPES).includes(profile.docType) || !Object.values(BLOOD_TYPES).includes(profile.bloodType) || !Object.values(BLOOD_RH).includes(profile.bloodRh) || !Object.values(DISABILITIES).includes(profile.disability))
+    return 'Select document, blood/Rh, and disability values explicitly.';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.birthDate)) return 'Birth date must use YYYY-MM-DD.';
+  if (profile.allergies.length === 0 || profile.chronicConditions.length === 0 || profile.medications.length === 0)
+    return 'Confirm allergies, conditions, and medication. Write "none" when applicable.';
+  const contact = profile.emergencyContacts[0];
+  if (!contact?.name.trim() || !contact.phone.trim() || !contact.relationship.trim()) return 'A complete emergency contact is required.';
+  return null;
+}

@@ -73,7 +73,7 @@ export interface Telegram {
   status: PersonStatus;
   /** 1-5. Drives rescuer triage ordering. */
   severity: number;
-  location: GeoPoint;
+  location: GeoPoint | null;
   /** Epoch seconds, set by the ORIGIN — not when this node received it. */
   timestamp: number;
   /** Hops already travelled. The receiver increments, so an origin telegram is 0. */
@@ -187,7 +187,7 @@ export interface TelegramDraft {
   eventId: string;
   event: EventType;
   status: PersonStatus;
-  location: GeoPoint;
+  location: GeoPoint | null;
   severity: number;
 }
 
@@ -236,13 +236,14 @@ export function parseTelegram(wireJson: string): Telegram {
   if (t.verify !== null && typeof t.verify !== 'object') throw new ContractDriftError('verify', t.verify);
 
   const location = t.location;
-  if (
-    typeof location !== 'object' ||
-    location === null ||
-    typeof (location as GeoPoint).lat !== 'number' ||
-    typeof (location as GeoPoint).lng !== 'number'
-  ) {
-    throw new ContractDriftError('location', location);
+  if (location !== null && location !== undefined) {
+    if (
+      typeof location !== 'object' ||
+      typeof (location as GeoPoint).lat !== 'number' ||
+      typeof (location as GeoPoint).lng !== 'number'
+    ) {
+      throw new ContractDriftError('location', location);
+    }
   }
 
   return raw as Telegram;

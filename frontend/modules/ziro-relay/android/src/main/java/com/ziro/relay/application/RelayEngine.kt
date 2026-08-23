@@ -3,6 +3,8 @@ package com.ziro.relay.application
 import com.ziro.relay.domain.EngineStatus
 import com.ziro.relay.domain.PresenceSchedule
 import com.ziro.relay.domain.RelayEvent
+import com.ziro.relay.domain.RelayPolicy
+import com.ziro.relay.domain.TelegramCodec
 import com.ziro.relay.ports.EventBus
 import com.ziro.relay.ports.LocationSource
 import com.ziro.relay.ports.PeerTransport
@@ -43,6 +45,7 @@ class RelayEngine(
     val status: StateFlow<EngineStatus> = _status.asStateFlow()
     private var observer: Job? = null
     private var heartbeat: Job? = null
+    private var orphanJob: Job? = null
 
     fun start() {
         if (observer?.isActive == true) return
@@ -55,6 +58,7 @@ class RelayEngine(
     }
 
     fun stop() {
+        cancelOrphanTimeout()
         stopHeartbeat()
         location.stop()
         transport.stop()
@@ -79,28 +83,60 @@ class RelayEngine(
         bus.events.collect { event ->
             when (event) {
                 is RelayEvent.PeerConnected -> {
+                    cancelOrphanTimeout()
                     transition(EngineStatus.SYNCING)
                     forwardPending(event.peer)
                     startHeartbeat()
+                }
+
+                is RelayEvent.TelegramReceived -> {
+                    // Immediate forward to all connected peers except the sender.
+                    // The stored telegram was already mutated (hop+1, ttl-1) by IngestTelegram,
+                    // so re-encoding it produces the correct relay payload with the signature intact.
+                    val peers = transport.peers.value - event.from
+                    if (peers.isNotEmpty() && RelayPolicy.shouldForward(event.telegram)) {
+                        val wire = TelegramCodec.encode(event.telegram)
+                        for (peer in peers) {
+                            transport.send(peer, wire)
+                        }
+                    }
                 }
 
                 is RelayEvent.TelegramDelivered -> ledger.markDelivered(event.id, event.to)
 
                 is RelayEvent.PeerDisconnected -> {
                     val alone = transport.peers.value.isEmpty()
-                    if (alone) stopHeartbeat()
-                    transition(if (alone) EngineStatus.RELAY else EngineStatus.SYNCING)
+                    if (alone) {
+                        stopHeartbeat()
+                        transition(EngineStatus.RELAY)
+                        scheduleOrphanTimeout()
+                    } else {
+                        transition(EngineStatus.SYNCING)
+                    }
                 }
 
-                // Observable state, not a transition trigger.
                 is RelayEvent.PeerDiscovered,
-                is RelayEvent.TelegramReceived,
                 is RelayEvent.TelegramSent,
                 is RelayEvent.TelegramRejected,
                 is RelayEvent.StatusChanged,
                 is RelayEvent.RadioError -> Unit
             }
         }
+    }
+
+    private fun scheduleOrphanTimeout() {
+        orphanJob?.cancel()
+        orphanJob = scope.launch {
+            delay(ORPHAN_TIMEOUT_MS)
+            if (transport.peers.value.isEmpty()) {
+                transition(EngineStatus.ORPHAN)
+            }
+        }
+    }
+
+    private fun cancelOrphanTimeout() {
+        orphanJob?.cancel()
+        orphanJob = null
     }
 
     /**
@@ -137,5 +173,6 @@ class RelayEngine(
 
     private companion object {
         const val MILLIS_PER_SECOND = 1_000L
+        const val ORPHAN_TIMEOUT_MS = 120_000L
     }
 }

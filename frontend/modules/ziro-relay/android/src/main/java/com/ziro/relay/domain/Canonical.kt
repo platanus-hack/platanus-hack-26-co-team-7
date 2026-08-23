@@ -28,8 +28,13 @@ object Canonical {
         field(t.status.name)
         field(t.severity)
         // Fixed to 6 decimals so Double formatting can never drift between devices.
-        field(String.format(java.util.Locale.ROOT, "%.6f", t.location.lat))
-        field(String.format(java.util.Locale.ROOT, "%.6f", t.location.lng))
+        if (t.location != null) {
+            field(String.format(java.util.Locale.ROOT, "%.6f", t.location.lat))
+            field(String.format(java.util.Locale.ROOT, "%.6f", t.location.lng))
+        } else {
+            field(NULL)
+            field(NULL)
+        }
         field(t.timestamp)
         field(t.origin)
         vital(t.vital)

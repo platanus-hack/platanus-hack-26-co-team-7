@@ -42,6 +42,10 @@ export interface RelayClient {
   getDeviceIdentity(): DeviceIdentity;
   scheduleGatewaySync(): Promise<void>;
   activateEmergency(event: ActiveEmergencyEvent): Promise<void>;
+  setEmergencyUserStatus(status: string): Promise<void>;
+  getRadioState(): { bluetoothEnabled: boolean; wifiEnabled: boolean };
+  openBluetoothSettings(): void;
+  openWifiSettings(): void;
   addRelayListener(listener: (event: RelayEvent) => void): { remove(): void };
 }
 
@@ -49,11 +53,11 @@ const nativeRelay = Platform.OS === 'android' ? requireOptionalNativeModule<unkn
 
 export function getNativeRelayConfigurationError(): string | null {
   if (Platform.OS !== 'android') {
-    return 'ZIRO Relay is available only in an Android development or release build.';
+    return 'Replica Relay is available only in an Android development or release build.';
   }
 
   if (nativeRelay == null) {
-    return 'ZIRO Relay native module is unavailable. Expo Go cannot run this app; install an Android development or release build that includes ZiroRelay.';
+    return 'Replica Relay native module is unavailable. Expo Go cannot run this app; install an Android development or release build that includes ZiroRelay.';
   }
 
   return null;
@@ -88,6 +92,10 @@ export function createRelayClient(): RelayClient {
     getDeviceIdentity: native.getDeviceIdentity,
     scheduleGatewaySync: native.scheduleGatewaySync,
     activateEmergency: native.activateEmergency,
+    setEmergencyUserStatus: native.setEmergencyUserStatus,
+    getRadioState: native.getRadioState,
+    openBluetoothSettings: native.openBluetoothSettings,
+    openWifiSettings: native.openWifiSettings,
     addRelayListener: native.addRelayListener,
   };
 }

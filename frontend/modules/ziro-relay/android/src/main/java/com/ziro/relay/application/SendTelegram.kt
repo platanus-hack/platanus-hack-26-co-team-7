@@ -37,7 +37,7 @@ class SendTelegram(
 
     suspend operator fun invoke(
         eventId: String,
-        location: GeoPoint,
+        location: GeoPoint? = null,
         event: EventType = EventType.EARTHQUAKE,
         status: PersonStatus = PersonStatus.EMERGENCY,
         severity: Int = Telegram.DEFAULT_SEVERITY,

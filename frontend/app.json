@@ -1,13 +1,23 @@
 {
   "expo": {
-    "name": "ZIRO",
+    "name": "Replica",
     "slug": "ziro",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    "icon": "../project-logo.png",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "splash": {
+      "image": "../project-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0d0d0d"
+    },
     "android": {
-      "package": "com.ziro.relay"
+      "package": "com.ziro.relay",
+      "adaptiveIcon": {
+        "foregroundImage": "../project-logo.png",
+        "backgroundColor": "#0d0d0d"
+      }
     },
     "plugins": [
       [
@@ -19,7 +29,8 @@
             "targetSdkVersion": 35
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {

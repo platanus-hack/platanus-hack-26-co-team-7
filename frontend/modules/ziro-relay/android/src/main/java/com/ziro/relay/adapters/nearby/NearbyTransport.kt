@@ -26,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
@@ -71,6 +72,7 @@ class NearbyTransport(
     private val connectedEndpoints = ConcurrentHashMap<String, String>()
     private val pending = ConcurrentHashMap<String, ByteArray>()
     @Volatile private var running = false
+    private var sweepJob: Job? = null
 
     override fun start() {
         if (running) return
@@ -88,6 +90,7 @@ class NearbyTransport(
     }
 
     override fun stop() {
+        stopPendingSweep()
         running = false
         pending.clear()
         endpointNames.clear()
@@ -166,6 +169,7 @@ class NearbyTransport(
                 _peers.value = _peers.value + peer
                 bus.emit(RelayEvent.PeerConnected(peer))
                 resendPending(peer)
+                startPendingSweep()
             } else {
                 radioError("Connection rejected: ${resolution.status.statusMessage ?: resolution.status.statusCode}")
             }
@@ -176,6 +180,7 @@ class NearbyTransport(
             if (peer != null && connectedEndpoints.remove(peer.value, endpointId)) {
                 _peers.value = _peers.value - peer
                 bus.emit(RelayEvent.PeerDisconnected(peer))
+                if (_peers.value.isEmpty()) stopPendingSweep()
             }
             endpointNames.remove(endpointId)
         }
@@ -248,6 +253,29 @@ class NearbyTransport(
         }
     }
 
+    private fun startPendingSweep() {
+        if (sweepJob?.isActive == true) return
+        sweepJob = scope.launch {
+            while (isActive && running) {
+                delay(SWEEP_INTERVAL_MS)
+                _peers.value.forEach { peer ->
+                    val prefix = "${peer.value}:"
+                    pending.forEach { (key, envelope) ->
+                        if (key.startsWith(prefix)) {
+                            val messageId = key.removePrefix(prefix)
+                            sendEnvelope(peer, messageId, envelope, attempt = 0)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopPendingSweep() {
+        sweepJob?.cancel()
+        sweepJob = null
+    }
+
     private fun resendPending(peer: PeerId) {
         pending.forEach { (key, envelope) ->
             val prefix = "${peer.value}:"
@@ -287,5 +315,6 @@ class NearbyTransport(
         const val SERVICE_ID = "ziro.relay.v1"
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 2_000L
+        private const val SWEEP_INTERVAL_MS = 30_000L
     }
 }

@@ -86,6 +86,26 @@ class ZiroRelayModule : Module() {
             appContext.reactContext?.let { RelayContainer.attach(it) }
             observeEngine()
             observeConnectivity()
+            // Auto-resume relay if an active emergency exists and permissions are granted
+            scope.launch {
+                try {
+                    val context = RelayContainer.context()
+                    val emergency = RelayContainer.activeEmergency.current()
+                    if (emergency != null) {
+                        val allGranted = requiredPermissions().all {
+                            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+                        }
+                        if (allGranted) {
+                            ContextCompat.startForegroundService(
+                                context,
+                                Intent(context, RelayForegroundService::class.java)
+                            )
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Auto-start is best-effort; manual activation remains available
+                }
+            }
         }
 
         /** Current node status without waiting for an event. Used on mount. */
@@ -157,8 +177,10 @@ class ZiroRelayModule : Module() {
                 .getOrElse { throw IllegalArgumentException("Invalid telegram draft: ${it.message}") }
             require(draft.eventId.isNotBlank()) { "eventId is required" }
             require(draft.severity in 1..5) { "severity must be between 1 and 5" }
-            require(draft.location.lat in -90.0..90.0 && draft.location.lng in -180.0..180.0) {
-                "location is outside valid coordinates"
+            if (draft.location != null) {
+                require(draft.location.lat in -90.0..90.0 && draft.location.lng in -180.0..180.0) {
+                    "location is outside valid coordinates"
+                }
             }
             val telegram = RelayContainer.sendTelegram(
                 eventId = draft.eventId.trim(),
@@ -227,6 +249,36 @@ class ZiroRelayModule : Module() {
             ContextCompat.startForegroundService(context, Intent(context, RelayForegroundService::class.java))
             if (changed) scope.launch { RelayContainer.announcePresence(force = true) }
         }.runOnQueue(Queues.MAIN)
+
+        AsyncFunction("setEmergencyUserStatus").Coroutine<Unit, String> { statusStr ->
+            val status = PersonStatus.valueOf(statusStr)
+            RelayContainer.activeEmergency.updateUserStatus(status)
+            scope.launch { RelayContainer.announcePresence(force = true) }
+        }
+
+        Function("getRadioState") {
+            val context = RelayContainer.context()
+            val btAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+            val wifiManager = context.getSystemService(android.net.wifi.WifiManager::class.java)
+            mapOf(
+                "bluetoothEnabled" to (btAdapter?.isEnabled == true),
+                "wifiEnabled" to (wifiManager?.isWifiEnabled == true),
+            )
+        }
+
+        Function("openBluetoothSettings") {
+            val context = RelayContainer.context()
+            val intent = android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+
+        Function("openWifiSettings") {
+            val context = RelayContainer.context()
+            val intent = android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
     }
 
     /**
@@ -390,7 +442,7 @@ private data class TelegramDraft(
     val eventId: String,
     val event: EventType,
     val status: PersonStatus,
-    val location: GeoPoint,
+    val location: GeoPoint? = null,
     val severity: Int,
 )
 

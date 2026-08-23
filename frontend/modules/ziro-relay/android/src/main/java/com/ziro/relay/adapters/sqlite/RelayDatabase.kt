@@ -27,6 +27,7 @@ class RelayDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VE
         if (oldVersion < 3) createSyncTables(db)
         if (oldVersion < 4) createEmergencyTables(db)
         if (oldVersion < 6) createPurgeTables(db)
+        if (oldVersion < 7) db.execSQL("ALTER TABLE active_emergency ADD COLUMN user_status TEXT NOT NULL DEFAULT 'EMERGENCY'")
     }
 
     private fun createSyncTables(db: SQLiteDatabase) {
@@ -35,7 +36,7 @@ class RelayDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VE
     }
 
     private fun createEmergencyTables(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS active_emergency (id INTEGER PRIMARY KEY CHECK (id = 1), event_id TEXT NOT NULL, event_type TEXT NOT NULL, revision INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS active_emergency (id INTEGER PRIMARY KEY CHECK (id = 1), event_id TEXT NOT NULL, event_type TEXT NOT NULL, revision INTEGER NOT NULL, user_status TEXT NOT NULL DEFAULT 'EMERGENCY')")
     }
 
     private fun createPurgeTables(db: SQLiteDatabase) {
@@ -45,6 +46,6 @@ class RelayDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VE
 
     private companion object {
         const val NAME = "ziro_relay.sqlite"
-        const val VERSION = 6
+        const val VERSION = 7
     }
 }

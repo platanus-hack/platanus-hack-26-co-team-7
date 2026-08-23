@@ -1,8 +1,6 @@
 package com.ziro.relay.application
 
 import com.ziro.relay.domain.EventType
-import com.ziro.relay.domain.GeoPoint
-import com.ziro.relay.domain.PersonStatus
 import com.ziro.relay.domain.RelayEvent
 import com.ziro.relay.domain.Telegram
 import com.ziro.relay.ports.EventBus
@@ -34,7 +32,6 @@ class AnnouncePresence(
     private val location: LocationSource,
     private val bus: EventBus,
     private val activeEmergency: () -> ActiveEmergency?,
-    private val fallbackLocation: GeoPoint = FALLBACK_LOCATION,
     private val minIntervalSeconds: Long = MIN_INTERVAL_SECONDS,
     private val now: () -> Long = { System.currentTimeMillis() / 1000 },
 ) {
@@ -60,9 +57,9 @@ class AnnouncePresence(
         val emergency = activeEmergency() ?: return null
         sendTelegram(
             eventId = emergency.eventId,
-            location = location.current() ?: fallbackLocation,
+            location = location.current(),
             event = emergency.eventType,
-            status = PersonStatus.EMERGENCY,
+            status = emergency.userStatus,
         )
     }.onFailure { error ->
         bus.emit(
@@ -74,9 +71,6 @@ class AnnouncePresence(
     }.getOrNull()
 
     companion object {
-        /** Used only when no provider has ever produced a fix. Bogota city centre. */
-        val FALLBACK_LOCATION = GeoPoint(lat = 4.6097, lng = -74.0817)
-
         /** Flap guard. A link that drops and re-forms inside this window announces once. */
         const val MIN_INTERVAL_SECONDS = 60L
     }
