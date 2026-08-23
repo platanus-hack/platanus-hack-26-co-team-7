@@ -1,7 +1,9 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Platform, Pressable, SafeAreaView, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { BLOOD_RH, BLOOD_TYPES, DISABILITIES, DOCUMENT_TYPES, type ProfileInput } from 'ziro-relay';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold, Inter_900Black } from '@expo-google-fonts/inter';
 
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -35,13 +37,14 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
   const [emergencyStatus, setEmergencyStatus] = useState('Waiting for an active event.');
   const activationKey = useRef<string | null>(null);
   const [login, setLogin] = useState({ docType: 'CC' as ProfileInput['docType'], docNumber: '', password: '' });
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [registration, setRegistration] = useState<ProfileInput>(blankProfile());
   const api = useMemo(() => new PrivateApi(relay, baseUrl), [baseUrl, relay]);
   useEffect(() => { const override = relay.getApiBaseUrl(); if (override) { try { setBaseUrl(validateApiBaseUrl(override, 'Saved API base URL')); } catch { relay.saveApiBaseUrl(buildApiBaseUrl); } } }, [buildApiBaseUrl, relay]);
   useEffect(() => { void (async () => { try { const restored = await api.restoreProfile(); if (restored) { await relay.saveProfile(restored); setProfile(restored); } } catch (error) { setSessionError(error instanceof Error ? error.message : 'Unable to restore session.'); } finally { setLoading(false); } })(); }, [api, relay]);
   const authenticate = async () => {
-    try { const next = await api.login(login.docType, login.docNumber, login.password); await relay.saveProfile(next); setProfile(next); } catch (error) { Alert.alert('Login failed', error instanceof Error ? error.message : 'Unknown error'); }
+    try { const next = await api.login(login.docType, login.docNumber, login.password); await relay.saveProfile(next); Alert.alert('Welcome back!', 'Session started.'); setProfile(next); } catch (error) { Alert.alert('Login failed', error instanceof Error ? error.message : 'Unknown error'); }
   };
   const syncOutbox = async () => {
     await relay.scheduleGatewaySync();
@@ -65,7 +68,8 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') reconcile(); });
     return () => { active = false; clearInterval(interval); subscription.remove(); };
   }, [api, profile, relay]);
-  const register = async () => { const validation = validateRegistration(registration, login.password); if (validation) return Alert.alert('Registration incomplete', validation); try { const next = await api.register(registration, login.password); await relay.saveProfile(next); setProfile(next); } catch (error) { const msg = error instanceof Error ? error.message : 'Registration failed.'; setSessionError(msg); Alert.alert('Registration failed', msg); } };
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const register = async () => { const errors = validateRegistration(registration, login.password); setFieldErrors(errors); if (Object.keys(errors).length > 0) return; try { const next = await api.register(registration, login.password); await relay.saveProfile(next); Alert.alert('Account created', 'Welcome to Replica!'); setProfile(next); } catch (error) { const msg = error instanceof Error ? error.message : 'Registration failed.'; setSessionError(msg); Alert.alert('Registration failed', msg); } };
   const logout = async () => { await api.logout(); setProfile(null); setLogin({ docType: 'CC', docNumber: '', password: '' }); setSessionError(null); };
   const triggerDemo = async () => {
     activationKey.current ??= createIdempotencyKey();
@@ -116,6 +120,7 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
                 password={login.password}
                 onPasswordChange={(password) => setLogin({ ...login, password })}
                 onRegister={() => void register()}
+                errors={fieldErrors}
               />
             </View>
           ) : (
@@ -148,14 +153,19 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
               </Field>
 
               <Field label="Password">
-                <TextInput
-                  style={shared.input}
-                  value={login.password}
-                  secureTextEntry
-                  onChangeText={(password) => setLogin({ ...login, password })}
-                  placeholderTextColor={C.textMuted}
-                  placeholder="••••••••••••"
-                />
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <TextInput
+                    style={[shared.input, { flex: 1 }]}
+                    value={login.password}
+                    secureTextEntry={!showLoginPassword}
+                    onChangeText={(password) => setLogin({ ...login, password })}
+                    placeholderTextColor={C.textMuted}
+                    placeholder="••••••••••••"
+                  />
+                  <Pressable onPress={() => setShowLoginPassword(!showLoginPassword)} style={{ paddingHorizontal: 10 }}>
+                    <Ionicons name={showLoginPassword ? 'eye' : 'lock-closed'} size={20} color={C.textMuted} />
+                  </Pressable>
+                </View>
               </Field>
 
               {/* SIGN IN — outlined premium button */}
@@ -297,49 +307,63 @@ function ApiUrlConfig({
   );
 }
 
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <Text style={{ fontFamily: F.medium, color: C.error, fontSize: 12, marginTop: 2 }}>{message}</Text>;
+}
+
 function RegistrationForm({
   profile,
   onChange,
   password,
   onPasswordChange,
   onRegister,
+  errors,
 }: {
   profile: ProfileInput;
   onChange: (profile: ProfileInput) => void;
   password: string;
   onPasswordChange: (password: string) => void;
   onRegister: () => void;
+  errors: FieldErrors;
 }) {
+  const [showIdentityAnswer, setShowIdentityAnswer] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const contact = profile.emergencyContacts[0];
+
+  const errorBorder = { borderColor: C.error, borderWidth: 1.5 };
 
   const textField = (
     label: string,
-    key: 'fullName' | 'docNumber' | 'birthDate' | 'questionId' | 'identityAnswer',
+    key: 'fullName' | 'docNumber' | 'questionId' | 'identityAnswer',
     opts?: { placeholder?: string; secure?: boolean },
   ) => (
     <Field key={key} label={label}>
       <TextInput
-        style={shared.input}
+        style={[shared.input, errors[key] && errorBorder]}
         value={profile[key] ?? ''}
         onChangeText={(value) => onChange({ ...profile, [key]: value })}
         secureTextEntry={opts?.secure ?? key === 'identityAnswer'}
         placeholder={opts?.placeholder}
         placeholderTextColor={C.textMuted}
       />
+      <FieldError message={errors[key]} />
     </Field>
   );
 
   const listField = (label: string, key: 'allergies' | 'chronicConditions' | 'medications') => (
     <Field key={key} label={label}>
       <TextInput
-        style={shared.input}
+        style={[shared.input, errors[key] && errorBorder]}
         value={profile[key].join(', ')}
         onChangeText={(value) =>
           onChange({ ...profile, [key]: value.split(',').map((item) => item.trim()).filter(Boolean) })
         }
-        placeholder="write none if none"
+        placeholder="Optional — separate with commas"
         placeholderTextColor={C.textMuted}
       />
+      <FieldError message={errors[key]} />
     </Field>
   );
 
@@ -352,7 +376,7 @@ function RegistrationForm({
         {textField('Full name *', 'fullName')}
 
         <Field label="Document type *">
-          <View style={shared.chips}>
+          <View style={[shared.chips, errors.docType && { borderWidth: 1.5, borderColor: C.error, borderRadius: 12, padding: 6 }]}>
             {Object.values(DOCUMENT_TYPES).map((opt) => (
               <Pressable
                 key={opt}
@@ -363,10 +387,34 @@ function RegistrationForm({
               </Pressable>
             ))}
           </View>
+          <FieldError message={errors.docType} />
         </Field>
 
         {textField('Document number *', 'docNumber')}
-        {textField('Birth date *', 'birthDate', { placeholder: 'YYYY-MM-DD' })}
+        <Field label="Birth date *">
+          <Pressable onPress={() => setShowDatePicker(true)} style={[shared.input, errors.birthDate && errorBorder]}>
+            <Text style={{ color: profile.birthDate ? C.text : C.textMuted, fontFamily: 'Inter_400Regular', fontSize: 15 }}>
+              {profile.birthDate || 'Select date'}
+            </Text>
+          </Pressable>
+          {showDatePicker && (
+            <DateTimePicker
+              value={profile.birthDate ? new Date(profile.birthDate + 'T00:00:00') : new Date(2000, 0, 1)}
+              mode="date"
+              maximumDate={new Date(Date.now() - 86400000)}
+              onChange={(_, date) => {
+                setShowDatePicker(Platform.OS === 'ios');
+                if (date) {
+                  const y = date.getFullYear();
+                  const m = String(date.getMonth() + 1).padStart(2, '0');
+                  const d = String(date.getDate()).padStart(2, '0');
+                  onChange({ ...profile, birthDate: `${y}-${m}-${d}` });
+                }
+              }}
+            />
+          )}
+          <FieldError message={errors.birthDate} />
+        </Field>
       </View>
 
       <View style={shared.divider} />
@@ -376,7 +424,7 @@ function RegistrationForm({
         <Text style={[shared.label, { marginBottom: 4 }]}>Medical</Text>
 
         <Field label="Blood group *">
-          <View style={shared.chips}>
+          <View style={[shared.chips, errors.bloodType && { borderWidth: 1.5, borderColor: C.error, borderRadius: 12, padding: 6 }]}>
             {Object.values(BLOOD_TYPES).map((opt) => (
               <Pressable
                 key={opt}
@@ -387,20 +435,22 @@ function RegistrationForm({
               </Pressable>
             ))}
           </View>
+          <FieldError message={errors.bloodType} />
         </Field>
 
         <Field label="Rh factor *">
-          <View style={shared.chips}>
+          <View style={[shared.chips, errors.bloodRh && { borderWidth: 1.5, borderColor: C.error, borderRadius: 12, padding: 6 }]}>
             {Object.values(BLOOD_RH).map((opt) => (
               <Pressable
                 key={opt}
                 style={[shared.chip, profile.bloodRh === opt && shared.chipActive]}
                 onPress={() => onChange({ ...profile, bloodRh: opt as ProfileInput['bloodRh'] })}
               >
-                <Text style={profile.bloodRh === opt ? shared.chipTextActive : shared.chipText}>{opt}</Text>
+                <Text style={profile.bloodRh === opt ? shared.chipTextActive : shared.chipText}>{enumLabel(opt)}</Text>
               </Pressable>
             ))}
           </View>
+          <FieldError message={errors.bloodRh} />
         </Field>
 
         {listField('Allergies *', 'allergies')}
@@ -408,17 +458,18 @@ function RegistrationForm({
         {listField('Medications *', 'medications')}
 
         <Field label="Disability *">
-          <View style={shared.chips}>
+          <View style={[shared.chips, errors.disability && { borderWidth: 1.5, borderColor: C.error, borderRadius: 12, padding: 6 }]}>
             {Object.values(DISABILITIES).map((opt) => (
               <Pressable
                 key={opt}
                 style={[shared.chip, profile.disability === opt && shared.chipActive]}
                 onPress={() => onChange({ ...profile, disability: opt as ProfileInput['disability'] })}
               >
-                <Text style={profile.disability === opt ? shared.chipTextActive : shared.chipText}>{opt}</Text>
+                <Text style={profile.disability === opt ? shared.chipTextActive : shared.chipText}>{enumLabel(opt)}</Text>
               </Pressable>
             ))}
           </View>
+          <FieldError message={errors.disability} />
         </Field>
 
         <View style={shared.switchRow}>
@@ -440,33 +491,41 @@ function RegistrationForm({
 
         <Field label="Name *">
           <TextInput
-            style={shared.input}
+            style={[shared.input, errors.contactName && errorBorder]}
             value={contact.name}
             onChangeText={(name) => onChange({ ...profile, emergencyContacts: [{ ...contact, name }] })}
             placeholderTextColor={C.textMuted}
             placeholder="Full name"
           />
+          <FieldError message={errors.contactName} />
         </Field>
 
         <Field label="Phone *">
-          <TextInput
-            style={shared.input}
-            value={contact.phone}
-            onChangeText={(phone) => onChange({ ...profile, emergencyContacts: [{ ...contact, phone }] })}
-            keyboardType="phone-pad"
-            placeholderTextColor={C.textMuted}
-            placeholder="+573001234567"
-          />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={[shared.input, { paddingHorizontal: 10, justifyContent: 'center', marginRight: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0 }, errors.contactPhone && errorBorder]}>
+              <Text style={{ color: C.text, fontFamily: 'Inter_400Regular' }}>+57</Text>
+            </View>
+            <TextInput
+              style={[shared.input, { flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }, errors.contactPhone && errorBorder]}
+              value={contact.phone.startsWith('+57') ? contact.phone.slice(3) : contact.phone}
+              onChangeText={(val) => onChange({ ...profile, emergencyContacts: [{ ...contact, phone: val ? `+57${val}` : '' }] })}
+              keyboardType="phone-pad"
+              placeholderTextColor={C.textMuted}
+              placeholder="3001234567"
+            />
+          </View>
+          <FieldError message={errors.contactPhone} />
         </Field>
 
         <Field label="Relationship *">
           <TextInput
-            style={shared.input}
+            style={[shared.input, errors.contactRelationship && errorBorder]}
             value={contact.relationship}
             onChangeText={(relationship) => onChange({ ...profile, emergencyContacts: [{ ...contact, relationship }] })}
             placeholderTextColor={C.textMuted}
             placeholder="e.g. Mother, Spouse"
           />
+          <FieldError message={errors.contactRelationship} />
         </Field>
       </View>
 
@@ -477,17 +536,39 @@ function RegistrationForm({
         <Text style={[shared.label, { marginBottom: 4 }]}>Security</Text>
 
         {textField('Verification question ID *', 'questionId', { placeholder: 'Question identifier' })}
-        {textField('SAFE answer *', 'identityAnswer', { secure: true, placeholder: '••••••••' })}
+
+        <Field label="SAFE answer *">
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TextInput
+              style={[shared.input, { flex: 1 }, errors.identityAnswer && errorBorder]}
+              value={profile.identityAnswer ?? ''}
+              onChangeText={(value) => onChange({ ...profile, identityAnswer: value })}
+              secureTextEntry={!showIdentityAnswer}
+              placeholder="••••••••"
+              placeholderTextColor={C.textMuted}
+            />
+            <Pressable onPress={() => setShowIdentityAnswer(!showIdentityAnswer)} style={{ paddingHorizontal: 10 }}>
+              <Ionicons name={showIdentityAnswer ? 'eye' : 'lock-closed'} size={20} color={C.textMuted} />
+            </Pressable>
+          </View>
+          <FieldError message={errors.identityAnswer} />
+        </Field>
 
         <Field label="Password (12+ characters) *">
-          <TextInput
-            style={shared.input}
-            value={password}
-            onChangeText={onPasswordChange}
-            secureTextEntry
-            placeholderTextColor={C.textMuted}
-            placeholder="••••••••••••"
-          />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TextInput
+              style={[shared.input, { flex: 1 }, errors.password && errorBorder]}
+              value={password}
+              onChangeText={onPasswordChange}
+              secureTextEntry={!showPassword}
+              placeholderTextColor={C.textMuted}
+              placeholder="••••••••••••"
+            />
+            <Pressable onPress={() => setShowPassword(!showPassword)} style={{ paddingHorizontal: 10 }}>
+              <Ionicons name={showPassword ? 'eye' : 'lock-closed'} size={20} color={C.textMuted} />
+            </Pressable>
+          </View>
+          <FieldError message={errors.password} />
         </Field>
       </View>
 
@@ -525,15 +606,39 @@ function blankProfile(): ProfileInput {
   };
 }
 
-function validateRegistration(profile: ProfileInput, password: string): string | null {
-  if (!profile.fullName.trim() || !profile.docNumber.trim() || !profile.birthDate.trim() || !profile.questionId.trim() || !profile.identityAnswer?.trim() || password.length < 12)
-    return 'Complete all identity, SAFE answer, and password fields.';
-  if (!Object.values(DOCUMENT_TYPES).includes(profile.docType) || !Object.values(BLOOD_TYPES).includes(profile.bloodType) || !Object.values(BLOOD_RH).includes(profile.bloodRh) || !Object.values(DISABILITIES).includes(profile.disability))
-    return 'Select document, blood/Rh, and disability values explicitly.';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.birthDate)) return 'Birth date must use YYYY-MM-DD.';
-  if (profile.allergies.length === 0 || profile.chronicConditions.length === 0 || profile.medications.length === 0)
-    return 'Confirm allergies, conditions, and medication. Write "none" when applicable.';
+function enumLabel(value: string): string {
+  const MAP: Record<string, string> = {
+    POSITIVE: 'Rh+',
+    NEGATIVE: 'Rh-',
+    NONE: 'None',
+    EMERGENCY: 'Emergency',
+    NEED_HELP: 'Need Help',
+    SAFE: 'Safe',
+  };
+  return MAP[value] ?? value;
+}
+
+type FieldErrors = Record<string, string>;
+
+function validateRegistration(profile: ProfileInput, password: string): FieldErrors {
+  const errors: FieldErrors = {};
+  if (!profile.fullName.trim()) errors.fullName = 'Required';
+  if (!Object.values(DOCUMENT_TYPES).includes(profile.docType)) errors.docType = 'Select one';
+  if (!profile.docNumber.trim()) errors.docNumber = 'Required';
+  if (!profile.birthDate.trim()) errors.birthDate = 'Required';
+  else if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.birthDate)) errors.birthDate = 'Use YYYY-MM-DD';
+  if (!Object.values(BLOOD_TYPES).includes(profile.bloodType)) errors.bloodType = 'Select one';
+  if (!Object.values(BLOOD_RH).includes(profile.bloodRh)) errors.bloodRh = 'Select one';
+  if (!Object.values(DISABILITIES).includes(profile.disability)) errors.disability = 'Select one';
+  if (profile.allergies.length === 0) errors.allergies = 'Write "none" if not applicable';
+  if (profile.chronicConditions.length === 0) errors.chronicConditions = 'Write "none" if not applicable';
+  if (profile.medications.length === 0) errors.medications = 'Write "none" if not applicable';
+  if (!profile.questionId?.trim()) errors.questionId = 'Required';
+  if (!profile.identityAnswer?.trim()) errors.identityAnswer = 'Required';
+  if (password.length < 12) errors.password = 'At least 12 characters';
   const contact = profile.emergencyContacts[0];
-  if (!contact?.name.trim() || !contact.phone.trim() || !contact.relationship.trim()) return 'A complete emergency contact is required.';
-  return null;
+  if (!contact?.name.trim()) errors.contactName = 'Required';
+  if (!contact?.phone.trim()) errors.contactPhone = 'Required';
+  if (!contact?.relationship.trim()) errors.contactRelationship = 'Required';
+  return errors;
 }
