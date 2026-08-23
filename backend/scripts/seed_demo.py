@@ -1,15 +1,19 @@
 """Idempotent demo seed for the public dashboard (openspec/changes/dashboard-web).
 
-One command creates an open earthquake Event, H3 ReceivedCell rows around
+One command creates an open earthquake Event and H3 ReceivedCell rows around
 Bogota (res 8, design D1; varied intensities over two windows to exercise
-the GROUP BY / MAX aggregation of design D6) and AI Report rows whose
-``content`` follows schema v1 of design D2. Idempotency (design D3):
+the GROUP BY / MAX aggregation of design D6). Idempotency (design D3):
 reconstruction by fixed event id — every run deletes all data scoped to
 DEMO_EVENT_ID (reports FK RESTRICT -> deleted first; received_cells CASCADE)
 and reinserts fresh data in
 one transaction; no duplicates, other events untouched. CLI limitation (D7):
 separate process, cannot broadcast WebSocket updates; start before uvicorn,
 clients load state via GET.
+
+Deliberately seeds NO reports: the cells it writes are all
+ai_reports/scheduler.py needs to deliver the first SCHEDULED report, so the
+feed shows genuine LLM output instead of canned copy. Existing reports for the
+event are still deleted, which is what resets the scheduler's cadence.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import h3
 
 from app.core.constants import H3_CELL_RESOLUTION
 from app.core.database import SessionLocal
-from app.models.analytics import ReceivedCell, Report, ReportSource
+from app.models.analytics import ReceivedCell, Report  # Report: still deleted for idempotency
 from app.models.case import Case
 from app.models.event import Event, EventType
 from app.models.person import BloodRh, BloodType, Disability, DocType, Person, PersonStatus
@@ -62,37 +66,9 @@ PERSON_SPECS = [
     ("demo-safe-001", "Demo Safe", PersonStatus.SAFE, 1, 1, 0.01, 0.01),
 ]
 
-# (source, minutes_after_occurred_at, title, summary, recommendations, figures)
-REPORT_TEMPLATES = [
-    (
-        ReportSource.SCHEDULED, 15,
-        "Sismo M5.6 en Bogotá — evaluación inicial",
-        "Se registran múltiples reportes desde el centro de Bogotá. Las celdas con mayor intensidad se concentran alrededor del centro y la zona sur-occidental. No hay evidencia de daños estructurales mayores.",
-        ["Priorizar la verificación de personas atrapadas en las celdas de intensidad alta.",
-         "Mantener abiertos los corredores de evacuación hacia el norte."],
-        {"cells_active": 12, "people_helped": 18},
-    ),
-    (
-        ReportSource.SCHEDULED, 45,
-        "Evolución a los 45 minutos: focos activos y estabilización",
-        "La intensidad decrece en la mayoría de celdas respecto a la primera ventana. Dos focos permanecen con conteo creciente de telegrams, lo que sugiere ayuda requerida continua en esos puntos.",
-        ["Redirir brigadas a los dos focos con tendencia creciente.",
-         "Confirmar estado SAFE de las personas marcadas NEED_HELP."],
-        {"cells_active": 12, "people_helped": 34},
-    ),
-    (
-        ReportSource.MANUAL, 90,
-        "Reporte manual del coordinador — cierre parcial de zonas",
-        "El coordinador marca la zona norte como estabilizada. Persisten dos focos de atención al sur-occidente; se recomienda mantener el evento abierto hasta su verificación.",
-        ["Mantener el evento abierto hasta confirmar SAFE en los focos activos."],
-        {"cells_active": 10, "people_helped": 51},
-    ),
-]
-
-
 def build_rows(
     now: datetime,
-) -> tuple[Event, list[Person], list[Telegram], list[Case], list[ReceivedCell], list[Report]]:
+) -> tuple[Event, list[Person], list[Telegram], list[Case], list[ReceivedCell]]:
     """Build the full demo dataset deterministically from ``now``."""
     occurred_at = now.replace(second=0, microsecond=0)
     window_len = timedelta(minutes=10)
@@ -174,17 +150,7 @@ def build_rows(
                 person_count=count, intensity=intensity,
             ))
 
-    reports = [
-        Report(
-            id=uuid.uuid4(), event_id=DEMO_EVENT_ID, source=source,
-            generated_at=occurred_at + timedelta(minutes=offset_min),
-            content={"version": 1, "title": title, "summary": summary,
-                     "recommendations": recommendations, "figures": figures},
-        )
-        for source, offset_min, title, summary, recommendations, figures
-        in REPORT_TEMPLATES
-    ]
-    return event, people, telegrams, cases, cells, reports
+    return event, people, telegrams, cases, cells
 
 
 def seed(session_sessionmaker=SessionLocal) -> dict[str, int]:
@@ -202,16 +168,16 @@ def seed(session_sessionmaker=SessionLocal) -> dict[str, int]:
                 Person.user_id.in_([spec[0] for spec in PERSON_SPECS])
             ).delete(synchronize_session=False)
 
-            event, people, telegrams, cases, cells, reports = build_rows(datetime.now(timezone.utc))
+            event, people, telegrams, cases, cells = build_rows(datetime.now(timezone.utc))
 
             session.add(event)
             session.flush()  # ensure event exists before FK-dependent rows (PostgreSQL enforces FKs)
             session.add_all(people)
             session.flush()  # ensure people exist before FK-dependent telegrams and cases
             session.add_all(telegrams)
+            session.flush()  # cases.last_telegram_id FKs telegrams.id — insert order is not otherwise guaranteed
             session.add_all(cases)
             session.add_all(cells)
-            session.add_all(reports)
 
     return {
         "events": 1,
@@ -219,7 +185,6 @@ def seed(session_sessionmaker=SessionLocal) -> dict[str, int]:
         "telegrams": len(telegrams),
         "cases": len(cases),
         "cells": len(cells),
-        "reports": len(reports),
     }
 
 
@@ -229,8 +194,8 @@ def main(argv: list[str] | None = None) -> int:
             "Seed the Replica database with demo dashboard data: one open "
             f"earthquake event ({DEMO_EVENT_ID}), H3 res-{H3_CELL_RESOLUTION} "
             "cells around Bogotá with varied intensities over two time "
-            "windows, priority-ordered EMERGENCY/NEED_HELP/SAFE people and "
-            "telegrams, and AI-style reports (schema v1)."
+            "windows, and priority-ordered EMERGENCY/NEED_HELP/SAFE people "
+            "and telegrams. No reports: the AI scheduler delivers the first one."
         ),
         epilog=(
             "IDEMPOTENCY (design D3): re-running this command IS the reset. If "
@@ -248,7 +213,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"Demo seed complete: event {DEMO_EVENT_ID}, {counts['people']} people, "
         f"{counts['telegrams']} telegrams, {counts['cases']} cases, "
-        f"{counts['cells']} received_cells, {counts['reports']} reports."
+        f"{counts['cells']} received_cells, 0 reports (the AI scheduler "
+        f"delivers the first one)."
     )
     return 0
 

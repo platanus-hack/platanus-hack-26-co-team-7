@@ -28,7 +28,6 @@ from app.modules.ai_reports.snapshot import build_snapshot
 
 logger = logging.getLogger(__name__)
 
-_LLM_TIMEOUT_SECONDS = 30.0
 _LLM_TEMPERATURE = 0.3
 
 _SYSTEM_PROMPT = (
@@ -43,6 +42,22 @@ _SYSTEM_PROMPT = (
     "(cells_active=totals.active_cells, people_in_danger=totals.total_persons, "
     "gov_actions_count=cantidad de gov_actions). Título y resumen en español."
 )
+
+
+def _authoritative_figures(snapshot: dict, gov_actions: list[dict[str, Any]]) -> dict[str, int]:
+    """The only figures allowed to reach a report: computed, never narrated.
+
+    The model is told to reuse the snapshot numbers verbatim, but it can still
+    emit something else (an observed run returned ``gov_actions_count: -1`` for
+    an empty list, and schema validation accepts any number). Recomputing them
+    here is what actually enforces the module's "never invents figures" promise.
+    """
+    totals = snapshot["totals"]
+    return {
+        "cells_active": int(totals["active_cells"]),
+        "people_in_danger": int(totals["total_persons"]),
+        "gov_actions_count": len(gov_actions),
+    }
 
 
 def _fallback_content(snapshot: dict, gov_actions: list[dict[str, Any]]) -> dict:
@@ -76,11 +91,7 @@ def _fallback_content(snapshot: dict, gov_actions: list[dict[str, Any]]) -> dict
             "Mantener la difusión por la red de nodos hasta confirmar estados SAFE.",
             "Continuar la coordinación con la UNGRD según las acciones reportadas.",
         ],
-        "figures": {
-            "cells_active": int(totals["active_cells"]),
-            "people_in_danger": int(totals["total_persons"]),
-            "gov_actions_count": len(gov_actions),
-        },
+        "figures": _authoritative_figures(snapshot, gov_actions),
     }
 
 
@@ -130,13 +141,14 @@ async def _call_llm(snapshot: dict, gov_actions: list[dict[str, Any]]) -> dict |
         logger.info("LLM_API_KEY empty — using fallback template narrative")
         return None
     try:
-        async with httpx.AsyncClient(timeout=_LLM_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout_s) as client:
             response = await client.post(
                 f"{settings.llm_base_url.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {settings.llm_api_key}"},
                 json={
                     "model": settings.llm_model,
                     "temperature": _LLM_TEMPERATURE,
+                    "max_tokens": settings.llm_max_tokens,
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {"role": "system", "content": _SYSTEM_PROMPT},
@@ -187,6 +199,9 @@ async def generate_report(
         content = await _call_llm(snapshot, gov_actions)
         if content is None:
             content = _fallback_content(snapshot, gov_actions)
+        else:
+            # Keep the narration, discard the model's arithmetic.
+            content["figures"] = _authoritative_figures(snapshot, gov_actions)
 
         report = Report(event_id=snapshot["event_id"], source=source, content=content)
         session.add(report)

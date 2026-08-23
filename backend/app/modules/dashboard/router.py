@@ -26,13 +26,12 @@ D6/D7:
 from __future__ import annotations
 
 import h3
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_session
 from app.core.events import get_latest_open_event
-from app.core.ws import manager
 from app.models.analytics import ReceivedCell, Report
 from app.models.event import Event
 from app.modules.dashboard.schemas import (
@@ -138,19 +137,8 @@ def get_reports(
     )
 
 
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket) -> None:
-    if not manager.origin_allowed(websocket.headers.get("origin")):
-        await websocket.close(code=1008)  # policy violation: untrusted origin
-        return
-
-    await manager.connect(websocket)
-    try:
-        while True:
-            # Broadcast-only channel: client frames are read and ignored,
-            # the loop doubles as liveness detection for clean disconnects.
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        pass
-    finally:
-        manager.disconnect(websocket)
+# The realtime broadcast WS is mounted at the root path ("WS /ws") in
+# app/main.py — NOT here, because this router applies a "/api/v1" prefix to
+# every route. Defining it here would expose it at /api/v1/ws and break the
+# documented contract (clients connect to /ws and get a 403).
+# The origin policy lives in app/core/ws.py (ConnectionManager.origin_allowed).
