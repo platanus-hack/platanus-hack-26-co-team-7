@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+/* Hallmark · pre-emit critique: P5 H4 E5 S5 R5 V4 */
+
 /**
  * Design tokens sampled from the Replica mobile app (login + home screens):
  * near-pure black, warm neutrals, desaturated signal colors, hairline borders
@@ -43,6 +45,12 @@
   html {
     background-color: var(--color-void);
     color-scheme: dark;
+    /* Preserves sticky/fixed descendants while clipping accidental horizontal
+       overflow (clip, not hidden). */
+    overflow-x: clip;
+  }
+  body {
+    overflow-x: clip;
   }
 }
 
@@ -60,6 +68,42 @@
   line-height: 1.2;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+}
+
+/* Ambient aurora: faint mesh + emergency glow that lifts the flat warm-black
+   without touching the identity. Decorative only — keep it behind content. */
+@utility bg-aurora {
+  background:
+    radial-gradient(55% 45% at 50% 0%, color-mix(in srgb, var(--color-signal-mesh) 16%, transparent), transparent 72%),
+    radial-gradient(38% 32% at 84% 10%, color-mix(in srgb, var(--color-signal-emergency) 12%, transparent), transparent 70%);
+}
+
+/* Earthquake takeover: the hero's ambient layer shifts to emergency red when
+   the deterministic alert fires, so the takeover reads before the copy does. */
+@utility bg-aurora-alert {
+  background:
+    radial-gradient(60% 48% at 50% 0%, color-mix(in srgb, var(--color-signal-emergency) 28%, transparent), transparent 76%),
+    radial-gradient(44% 38% at 82% 8%, color-mix(in srgb, var(--color-risk-high) 20%, transparent), transparent 72%),
+    radial-gradient(40% 40% at 12% 30%, color-mix(in srgb, var(--color-signal-emergency) 16%, transparent), transparent 70%);
+}
+
+/* Resting hero: a quiet black → dark-grey vertical wash. */
+@utility bg-hero-rest {
+  background: linear-gradient(
+    180deg,
+    var(--color-void) 0%,
+    var(--color-panel-raised) 52%,
+    var(--color-hairline) 100%
+  );
+}
+
+/* Large operator figures (magnitude, personas en peligro): light mono,
+   tabular, tightened so a number reads as one landmark. */
+@utility display-num {
+  font-family: var(--font-mono-figures);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes report-in {
@@ -105,10 +149,51 @@
   animation: signal-blink 2s ease-in-out infinite;
 }
 
+/* Entrance: rise + fade with a decelerate ease (entrance = ease-out family).
+   Longhand properties so the stagger delays below are never reset by the
+   `animation` shorthand. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation-name: rise-in;
+  animation-duration: 0.6s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  animation-fill-mode: both;
+}
+
+/* Stagger delays for coordinated entrances (< 300ms total keeps it calm).
+   Declared after .animate-rise so their animation-delay wins the cascade. */
+.stagger-1 { animation-delay: 80ms; }
+.stagger-2 { animation-delay: 160ms; }
+.stagger-3 { animation-delay: 240ms; }
+
+/* Ambient breathing for live status and alert accents — a slow opacity
+   cycle, never a positional move, so it reads as "alive", not urgent. */
+@keyframes breathe {
+  0%,
+  100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.animate-breathe {
+  animation: breathe 3.2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-report-in,
   .animate-seismo,
-  .animate-signal-blink {
+  .animate-signal-blink,
+  .animate-rise,
+  .animate-breathe {
     animation: none;
   }
 }
