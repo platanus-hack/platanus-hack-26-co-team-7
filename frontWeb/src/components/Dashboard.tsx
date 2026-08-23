@@ -55,7 +55,7 @@ export default function Dashboard({
             <span className={`flex items-center gap-2 ${wsConnected ? "text-signal-safe" : "text-signal-help"}`}>
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  wsConnected ? "bg-signal-safe" : "animate-signal-blink bg-signal-help"
+                  wsConnected ? "animate-breathe bg-signal-safe" : "animate-signal-blink bg-signal-help"
                 }`}
               />
               {wsConnected ? "En vivo" : "Reconectando"}
