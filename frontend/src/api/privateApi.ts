@@ -58,6 +58,9 @@ export class PrivateApi {
     return { heatmapCells: cells, reports: publicReports.map((report: unknown) => publicReport(report)).filter((report): report is { title: string; summary: string } => report !== null) };
   }
   async activeEvents(): Promise<ActiveEvent[]> { const events = await this.request<Array<{ event_id: string; event: EventType; occurred_at: string; activation_revision: number; activation_source: string | null }>>('/events/active'); return events.map((event) => ({ eventId: event.event_id, event: event.event, occurredAt: event.occurred_at, revision: event.activation_revision, source: event.activation_source })); }
+  async reportStatus(eventId: string, status: string, lat: number, lng: number): Promise<void> {
+    await this.request('/events/status', { method: 'POST', body: JSON.stringify({ event_id: eventId, status, lat, lng }) });
+  }
   async activateDemoEvent(idempotencyKey: string): Promise<ActiveEvent> {
     const event = await this.request<{ event_id: string; event: EventType; activation_revision: number; activation_source: string }>('/demo/events/activate', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } });
     return { eventId: event.event_id, event: event.event, occurredAt: new Date().toISOString(), revision: event.activation_revision, source: event.activation_source };

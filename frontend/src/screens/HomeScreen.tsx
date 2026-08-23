@@ -183,6 +183,10 @@ export function HomeScreen({ onProfileSave, onLogout, api, showDemoTrigger, emer
     try {
       await relay.sendTelegram({ eventId, event: EVENT_TYPES.EARTHQUAKE, status, location, severity });
     } catch { /* telegram queuing may fail without full relay */ }
+    // Report status to server so it appears on the web map
+    if (api && location) {
+      try { await api.reportStatus(eventId, status, location.lat, location.lng); } catch { /* server report optional */ }
+    }
     setEmergencyResponded(true);
   };
 
