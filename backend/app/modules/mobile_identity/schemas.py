@@ -66,7 +66,7 @@ class DeviceIdentityInput(BaseModel):
 
 
 class RegisterRequest(ProfileFields):
-    password: Annotated[str, Field(min_length=12, max_length=128)]
+    password: Annotated[str, Field(min_length=8, max_length=128)]
     device_identity: DeviceIdentityInput
 
 

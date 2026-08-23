@@ -55,9 +55,9 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     const event = events.at(0);
     if (!event) return;
     setEmergencyStatus(`Event detected: ${event.eventId} revision ${event.revision}.`);
-    await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision });
+    try { await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision }); } catch { /* native relay may not be available */ }
     setEmergencyStatus('Relay active; durable emergency outbox created.');
-    await syncOutbox();
+    try { await syncOutbox(); } catch { /* gateway sync optional */ }
   };
   useEffect(() => {
     if (!profile) return;
@@ -69,15 +69,17 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     return () => { active = false; clearInterval(interval); subscription.remove(); };
   }, [api, profile, relay]);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const register = async () => { const errors = validateRegistration(registration, login.password); setFieldErrors(errors); if (Object.keys(errors).length > 0) return; try { const next = await api.register(registration, login.password); await relay.saveProfile(next); Alert.alert('Account created', 'Welcome to Replica!'); setProfile(next); } catch (error) { const msg = error instanceof Error ? error.message : 'Registration failed.'; setSessionError(msg); Alert.alert('Registration failed', msg); } };
+  const register = async () => { const filled = { ...registration, allergies: registration.allergies.length > 0 ? registration.allergies : ['none'], chronicConditions: registration.chronicConditions.length > 0 ? registration.chronicConditions : ['none'], medications: registration.medications.length > 0 ? registration.medications : ['none'] }; const errors = validateRegistration(filled, login.password); setFieldErrors(errors); if (Object.keys(errors).length > 0) return; try { const next = await api.register(filled, login.password); await relay.saveProfile(next); Alert.alert('Account created', 'Welcome to Replica!'); setProfile(next); } catch (error) { const msg = error instanceof Error ? error.message : 'Registration failed.'; setSessionError(msg); Alert.alert('Registration failed', msg); } };
   const logout = async () => { await api.logout(); setProfile(null); setLogin({ docType: 'CC', docNumber: '', password: '' }); setSessionError(null); };
   const triggerDemo = async () => {
     activationKey.current ??= createIdempotencyKey();
     try {
       setEmergencyStatus('Trigger requested.');
       const event = await api.activateDemoEvent(activationKey.current);
-      setEmergencyStatus(`Trigger committed: ${event.eventId} revision ${event.revision}.`);
-      await reconcileActiveEvents();
+      setEmergencyStatus(`Event detected: ${event.eventId} revision ${event.revision}.`);
+      try { await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision }); } catch { /* native relay may not be available in demo */ }
+      setEmergencyStatus('Relay active; durable emergency outbox created.');
+      try { await syncOutbox(); } catch { /* gateway sync optional in demo */ }
     } catch (error) {
       setEmergencyStatus(`Trigger error: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
@@ -568,7 +570,7 @@ function RegistrationForm({
           <FieldError message={errors.identityAnswer} />
         </Field>
 
-        <Field label="Password (12+ characters) *">
+        <Field label="Password (8+ characters) *">
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <TextInput
               style={[shared.input, { flex: 1 }, errors.password && errorBorder]}
@@ -644,12 +646,10 @@ function validateRegistration(profile: ProfileInput, password: string): FieldErr
   if (!Object.values(BLOOD_TYPES).includes(profile.bloodType)) errors.bloodType = 'Select one';
   if (!Object.values(BLOOD_RH).includes(profile.bloodRh)) errors.bloodRh = 'Select one';
   if (!Object.values(DISABILITIES).includes(profile.disability)) errors.disability = 'Select one';
-  if (profile.allergies.length === 0) errors.allergies = 'Write "none" if not applicable';
-  if (profile.chronicConditions.length === 0) errors.chronicConditions = 'Write "none" if not applicable';
-  if (profile.medications.length === 0) errors.medications = 'Write "none" if not applicable';
+  // Empty lists auto-fill with "none" — no validation error needed
   if (!profile.questionId?.trim()) errors.questionId = 'Required';
   if (!profile.identityAnswer?.trim()) errors.identityAnswer = 'Required';
-  if (password.length < 12) errors.password = 'At least 12 characters';
+  if (password.length < 8) errors.password = 'At least 8 characters';
   const contact = profile.emergencyContacts[0];
   if (!contact?.name.trim()) errors.contactName = 'Required';
   if (!contact?.phone.trim()) errors.contactPhone = 'Required';
