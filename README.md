@@ -1,4 +1,4 @@
-# ZIRO
+# Replica
 
 > Red de comunicación de emergencia que sigue funcionando cuando la infraestructura cae.
 
@@ -6,20 +6,20 @@
 **Hackathon:** Platanus Hack 26 — Bogotá
 **Team:** team-7
 
-## ¿Qué es ZIRO?
+## ¿Qué es Replica?
 
 Después de un terremoto las redes se saturan o caen. Una persona puede tener su teléfono, su ubicación y un video de lo que ocurrió, pero no puede enviar nada. Su familia no sabe dónde está.
 
-ZIRO convierte los teléfonos en una **red temporal que se auto-enriquece con cada interacción**: cuando el dispositivo A detecta la emergencia y emite un pequeño *telegrama* (~120 bytes) hacia un dispositivo B cercano, B no solo lo guarda para reenviarlo — **sincroniza su historial completo con A** y se lo pasa al siguiente. Cada nodo acumula un registro distribuido de personas que necesitan ayuda. Cuando un nodo con Internet aparece, todo se sube al servidor.
+Replica convierte los teléfonos en una **red temporal que se auto-enriquece con cada interacción**: cuando el dispositivo A detecta la emergencia y emite un pequeño *telegrama* (~120 bytes) hacia un dispositivo B cercano, B no solo lo guarda para reenviarlo — **sincroniza su historial completo con A** y se lo pasa al siguiente. Cada nodo acumula un registro distribuido de personas que necesitan ayuda. Cuando un nodo con Internet aparece, todo se sube al servidor.
 
 ## ¿Cómo funciona (en 30 segundos)?
 
-1. 📱 **A** detecta la emergencia → activa ZIRO → empieza a grabar y emitir el telegrama.
+1. 📱 **A** detecta la emergencia → activa Replica → empieza a grabar y emitir el telegrama.
 2. 📡 **A ↔ B** (Wi-Fi Direct / BLE, sin Internet) → B guarda el telegrama y sincroniza su ledger con A.
 3. 📡 **B ↔ C** → C guarda y sincroniza su ledger con B.
 4. 🌐 **D** tiene Internet → D sube todo al backend.
 5. 👨‍👩‍👧 Familiar abre el dashboard → ve "tu ser querido está en X, Y, saltó por N nodos".
-6. 🚑 **Bonus:** un rescatista con ZIRO que pasa cerca ve la lista de personas reportadas en la zona — sin Internet, sin servidor, solo del ledger distribuido.
+6. 🚑 **Bonus:** un rescatista con Replica que pasa cerca ve la lista de personas reportadas en la zona — sin Internet, sin servidor, solo del ledger distribuido.
 
 ## Stack
 

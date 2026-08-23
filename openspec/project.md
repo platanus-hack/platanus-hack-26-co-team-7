@@ -1,4 +1,4 @@
-# ZIRO — Project Brief
+# Replica — Project Brief
 
 ## El problema
 
@@ -16,14 +16,14 @@ Hay tres categorías de gente que necesitan comunicarse:
 2. **La familia**, que quiere saber si su ser querido está bien y dónde.
 3. **Los rescatistas**, que necesitan coordinar en zonas donde la red está caída o no llega.
 
-## La propuesta de valor de ZIRO
+## La propuesta de valor de Replica
 
-**ZIRO convierte los teléfonos en una red temporal de comunicación que sobrevive la caída de la infraestructura.**
+**Replica convierte los teléfonos en una red temporal de comunicación que sobrevive la caída de la infraestructura.**
 
-No intenta detectar el terremoto (eso lo hace EMSC, USGS, el sistema Android Earthquake Alerts de Google, etc.). ZIRO **usa un trigger externo** y a partir de ahí hace tres cosas:
+No intenta detectar el terremoto (eso lo hace EMSC, USGS, el sistema Android Earthquake Alerts de Google, etc.). Replica **usa un trigger externo** y a partir de ahí hace tres cosas:
 
 1. **Recopila** evidencia local (video, audio, GPS, timestamp, identificador anónimo) en el teléfono del afectado.
-2. **Transporta** un pequeño telegrama (~120 bytes) que resume la emergencia a través de dispositivos cercanos vía Wi-Fi Direct / BLE, sin Internet, sin torres celulares.
+2. **Transporta** un telegrama chico (~550-700 bytes) que resume la emergencia a través de dispositivos cercanos vía Wi-Fi Direct / BLE, sin Internet, sin torres celulares.
 3. **Acumula** un historial distribuido de emergencias en cada nodo que participa: cada teléfono que ve un telegrama lo guarda y lo sincroniza con sus pares, formando un registro distribuido que crece orgánicamente.
 
 Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la cadena, vuelca todo al servidor. La familia ve en un dashboard dónde está su ser querido y cómo llegó la información hasta allá.
@@ -32,11 +32,11 @@ Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la ca
 
 > "Son las 2:37 de la mañana. Ocurre un terremoto en Bogotá. Miles de personas intentan llamar a sus familiares. Las redes se saturan. Una persona tiene su teléfono, tiene GPS, tiene video de lo que ocurre, pero no puede enviar nada.
 >
-> **ZIRO** convierte ese teléfono — y todos los que están cerca — en una red temporal que se comunica por Wi-Fi Direct sin Internet. Cada teléfono guarda la información que pasa por él. Cuando uno con Internet aparece, todo llega al servidor. La familia ve dónde está su ser querido. Un rescatista puede ver, sin Internet, qué personas se reportaron en la zona.
+> **Replica** convierte ese teléfono — y todos los que están cerca — en una red temporal que se comunica por Wi-Fi Direct sin Internet. Cada teléfono guarda la información que pasa por él. Cuando uno con Internet aparece, todo llega al servidor. La familia ve dónde está su ser querido. Un rescatista puede ver, sin Internet, qué personas se reportaron en la zona.
 >
 > La información no desaparece cuando la red cae. **Se transporta de bolsillo en bolsillo.**"
 
-## Lo que ZIRO **NO** es
+## Lo que Replica **NO** es
 
 - ❌ No es un detector de sismos (usamos EMSC como trigger).
 - ❌ No es una app de mensajería general (Briar, Bridgefy, Signal ya existen para eso).
@@ -55,7 +55,7 @@ Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la ca
 | **ShakeAlert / Google EEW** | Alertas tempranas server-push | No transporta evidencia. Push unidireccional |
 | **Ushahidi** | Plataforma de mapeo de crisis | Requiere SMS o web. No funciona offline P2P |
 
-**ZIRO específicamente:** combina registro distribuido + gossip + auto-supervivencia del origen + caso de uso de rescatistas offline en un solo producto.
+**Replica específicamente:** combina registro distribuido + gossip + auto-supervivencia del origen + caso de uso de rescatistas offline en un solo producto.
 
 ## Métricas de éxito para la demo
 
@@ -70,12 +70,19 @@ Cuando un dispositivo con Internet entra en contacto con cualquier nodo de la ca
 
 | Capa | Tecnología | Por qué |
 |---|---|---|
-| UI + lógica de negocio | **React Native** | Reuso de JS, hot reload durante el hackatón, fácil de iterar |
-| Módulo nativo | **Kotlin** (dentro del mismo APK) | Acceso directo a Nearby Connections, Bluetooth, Wi-Fi, GPS, cámara, micrófono, foreground services |
-| Build | **Expo Development Build** (no Expo Go) | Expo Go no soporta módulos nativos custom; el dev build genera un APK con Kotlin adentro |
-| Distribución | **APK firmado** | Se instala a mano en los teléfonos de la demo sin Play Store |
+| UI | **Expo + React Native** (`src/`) | El equipo ya sabe Expo. Pantallas, perfil, mapa. Corre en Expo Go con el motor fake, así que la UI se construye desde la hora 1 sin SDK ni dev build. |
+| Motor offline | **Módulo local Kotlin** (`modules/ziro-relay/`) | Nearby Connections, dedup, HMAC, ledger, foreground service, GPS. Todo debajo del bridge. |
+| Frontera | **Bridge de 5 funciones + 1 evento** | Ver `bridge.md`. El bridge habla el mismo JSON que la radio. |
+| Build | **EAS Build** (dev client + APK) | Compila en la nube. Sin SDK de Android local. |
+| Distribución | **APK interno** | Se instala a mano en los teléfonos de la demo sin Play Store. |
 
 **Punto crítico:** Nearby Connections vive **dentro del APK de cada teléfono** — NO en el backend. Cada nodo Android corre la misma app y habla con sus pares por BT/Wi-Fi Direct. El backend es un observador pasivo que solo recibe cuando un nodo tiene Internet. Ver `communication.md` y `DECISIONS.md` para el detalle.
+
+**Decisión de fondo:** un único APK, stack híbrido. **El motor es GORDO y vive entero en Kotlin** — mesh, dedup, gossip, beacons, ledger, foreground service. **JavaScript es un visor y un comandante, nunca participa del camino de relay.**
+
+Y no es preferencia de estilo: el hilo de JS de React Native no está confiablemente vivo en background, un foreground service sí. Si el dedup o el ledger vivieran en JS, cada telegrama que llegue con la pantalla apagada se pierde — que es exactamente el caso de uso de ZIRO. Ver `bridge.md`.
+
+El servidor solo ve snapshots cuando hay Internet.
 
 ## Stack del backend
 

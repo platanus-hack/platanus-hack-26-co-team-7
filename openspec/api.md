@@ -1,5 +1,7 @@
 # api.md — Endpoints backend mínimos
 
+> ⚠️ **Desactualizado en parte:** el schema del telegrama y el modelo SQL de abajo son de la v1 del protocolo. El telegrama vigente es **v2** (bloques `vital`/`verify`, sin `family_contact`) — ver `protocol.md` sección 1 y la sección "Protocolo v2" en `DECISIONS.md`. La semántica de endpoints y del Emergency Orchestrator sigue válida; el stack definitivo es FastAPI + PostgreSQL (`architecture.md`).
+
 ## Stack
 
 - **Node.js + Express** o **Python + FastAPI** — cualquiera sirve para 36h, lo que el equipo domine.
@@ -122,6 +124,8 @@ CREATE INDEX idx_families_family_contact ON families(family_contact);
 
 Recibe un telegrama del gateway. **Es el endpoint principal.**
 
+El body es **el telegrama tal como viaja por la mesh**, sin transformar. El gateway hace `POST` de lo que tiene en su ledger. Schema completo en `protocol.md`.
+
 ```json
 // Request
 {
@@ -130,22 +134,34 @@ Recibe un telegrama del gateway. **Es el endpoint principal.**
   "user_id": "USER123",
   "event_id": "EARTHQUAKE001",
   "event": "EARTHQUAKE",
-  "name": "Juan Perez",
-  "blood": "O+",
-  "age": 35,
-  "medical_note": null,
-  "family_contact": "+57...",
-  "location": { "lat": 4.6097, "lng": -74.0817 },
   "status": "EMERGENCY",
-  "question_id": "PET_NAME_42",
-  "answer_hash": "abcxyz...",
-  "timestamp": 1787440000,
   "severity": 3,
+  "location": { "lat": 4.6097, "lng": -74.0817 },
+  "timestamp": 1787440000,
   "hop": 4,
   "ttl": 4,
-  "origin": "device_short_hash"
+  "origin": "d4f8a2b1",
+  "vital": {
+    "name": "Juan Perez",
+    "age": 35,
+    "blood": "O+",
+    "allergies": ["penicilina"],
+    "conditions": ["diabetes"],
+    "medications": ["warfarina"],
+    "disability": "NONE",
+    "pregnant": false
+  },
+  "verify": {
+    "question_id": "PET_NAME_42",
+    "answer_hash": "abcxyz..."
+  },
+  "hmac": "9f2a..."
 }
 ```
+
+> ⚠️ **`family_contact`, `doc_number` y `eps` NO vienen en el telegrama.** Se quitaron a propósito: viajar por 8 teléfonos de desconocidos, en SQLite sin cifrar, no aporta nada al triage y filtra todo. **El backend los resuelve del perfil de onboarding, indexado por `user_id`.**
+>
+> Implicancia directa para el orchestrator: para notificar a la familia tiene que hacer un lookup por `user_id` contra el perfil registrado. **Si el usuario nunca completó el onboarding con Internet, no hay a quién notificar** — el telegrama se guarda igual y queda visible para rescatistas, pero la notificación familiar falla. Está aceptado para el MVP; ver `protocol.md`.
 
 ```json
 // Response 201 Created
@@ -159,8 +175,9 @@ Recibe un telegrama del gateway. **Es el endpoint principal.**
 
 Lógica:
 1. Validar schema (zod / pydantic).
-2. Validar HMAC si está presente (descartar si inválido).
+2. Validar HMAC si está presente (descartar si inválido). **Sobre el canonical, que excluye `hop`, `ttl` y `hmac`** — si no, un telegrama con `hop=4` nunca valida. Ver `protocol.md` Regla 5.
 3. Pasar al **Emergency Orchestrator** (`orchestrator.ingest(payload)`). Este deduplica por `id`, agrupa por `user_id`, valida `answer_hash` si `status == "SAFE"`, y decide la prioridad.
+   - **Resolver el perfil por `user_id`** para obtener `family_contact`, `doc_number` y `eps`, que no vienen en el telegrama.
 4. INSERT en `messages` (idempotente por `id`, lo hace el orchestrator).
 5. INSERT en `message_path` con el peer que trajo el mensaje.
 6. WebSocket broadcast a clientes suscritos a este `user_id` o `family_contact`.

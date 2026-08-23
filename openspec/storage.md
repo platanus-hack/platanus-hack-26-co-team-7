@@ -2,13 +2,13 @@
 
 ## Concepto
 
-El **telegrama** transporta metadata (~120 bytes). El **video/audio** del evento se maneja por separado, con un patrón diferente. Aquí definimos los patrones posibles y cuál elegimos para ZIRO.
+El **telegrama** transporta metadata; el tamaño depende de los campos opcionales y no debe confundirse con el límite de un advertisement BLE. El **video/audio** del evento se maneja por separado, con un patrón diferente. Aquí definimos los patrones posibles y cuál elegimos para Replica.
 
 ## Tres patrones posibles
 
 ### Patrón A — Solo telegrama, evidencia queda en el origen
 
-- La app del origen sigue grabando localmente (MP4 en `/sdcard/ziro/evidence/{id}/video.mp4`).
+- La app del origen sigue grabando localmente (MP4 en `/sdcard/replica/evidence/{id}/video.mp4`).
 - El telegrama salta por los nodos.
 - Cuando el origen recupera Internet, hace upload del video al backend.
 - Los relays **nunca reciben el video**.
@@ -32,12 +32,10 @@ El **telegrama** transporta metadata (~120 bytes). El **video/audio** del evento
 
 - El telegrama salta rápido por los nodos (lo crítico).
 - El video queda solo en el origen.
-- Cuando un gateway con Internet recibe el telegrama, lo sube al backend.
-- El backend registra "persona A confirmada estar en X, Y con estado EMERGENCY" en segundos.
-- Cuando el origen recupera Internet (puede ser minutos u horas después), hace POST `multipart/form-data` con el video, referenciando el `id` del telegrama.
-- El backend actualiza el estado a "video adjunto recibido".
+- Cuando un gateway con Internet recibe el telegrama, podrá subirlo al backend cuando exista el cliente y contrato de ingesta.
+- Cuando el origen recupera Internet (puede ser minutos u horas después), podrá adjuntar el video referenciando el `id` del telegrama cuando exista ese endpoint.
 
-**Pro:** MVP viable en 36h. Backend recibe "alerta" en segundos, video en minutos/horas. **Honesto con el usuario** — la familia sabe que el video llegará después.
+**Pro:** diseño de MVP viable en 36h. Permite separar una alerta ligera de evidencia pesada y comunicar honestamente que el video puede llegar después.
 
 **Contra:** Si el origen nunca recupera Internet, el video se pierde. Pero el **estado** (ubicación, hora, evento) ya quedó en el servidor.
 
@@ -47,7 +45,9 @@ Para la hackatón, vamos con **Patrón C**. El pitch al juez es:
 
 > "La familia ve 'Última señal: hace 5 min' en segundos, y 'Video adjunto: recibido ✅' cuando el origen recupera señal. Dos pulsos de actualización, transparencia total."
 
-## Implementación del Patrón C
+## Implementación propuesta del Patrón C
+
+> Los fragmentos siguientes son diseño, no evidencia de endpoints, autenticación, sincronización gateway ni backend operativos.
 
 ### En el origen (Emergency Mode)
 
@@ -167,7 +167,7 @@ async def upload_evidence(
 ## Storage local en el origen
 
 ```
-/storage/emulated/0/Android/data/com.ziro.emergency/files/
+/storage/emulated/0/Android/data/com.replica.emergency/files/
 └── evidence/
     ├── a8f29c3f-7b9e-4a1d-8e2f-1c5b9d6e3f4a/
     │   ├── video.mp4        ← evidencia (500 kbps, 480p, 15fps)
@@ -193,7 +193,7 @@ Para que el video no sea enorme:
 
 ```
 ┌─────────────────────────────────┐
-│      ZIRO EMERGENCY             │
+│      Replica EMERGENCY             │
 ├─────────────────────────────────┤
 │                                 │
 │  👤 Juan Pérez                  │

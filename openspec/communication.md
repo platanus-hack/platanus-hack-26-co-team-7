@@ -2,13 +2,18 @@
 
 ## Dónde vive Nearby Connections (aclaración arquitectónica)
 
-Este es el punto más importante para entender ZIRO. **Nearby Connections vive en el teléfono, NO en el backend.**
+Este es el punto más importante para entender Replica. **Nearby Connections vive en el teléfono, NO en el backend.**
 
 ```
-ANDROID APP (cada teléfono)
-├── React Native (UI)
-├── Kotlin native module (Bluetooth, Wi-Fi, GPS, cámara, mic, foreground services)
-└── Nearby Connections API   ← vive acá, en el APK
+ANDROID APP (cada teléfono) — un solo APK vía EAS Build
+├── src/                              React Native · pantallas, perfil, mapa
+│      │
+│  ════╪════  el bridge (ver bridge.md) · 5 funciones, 1 evento
+│      │
+└── modules/ziro-relay/               EL MOTOR · Kotlin
+    ├── application/                  ingest · send · forward · engine
+    ├── domain/ + ports/              contrato compartido, cero Android
+    └── adapters/nearby/              Nearby Connections API  ← acá, y SOLO acá
        │
        ▼ (Bluetooth / Wi-Fi Direct)
 OTHER PHONES (peer-to-peer, sin Internet)
@@ -16,6 +21,8 @@ OTHER PHONES (peer-to-peer, sin Internet)
 Cuando algún nodo consigue Internet:
 Node → Internet → Backend Render (independiente, solo conoce la API HTTP/WS)
 ```
+
+**Nearby vive abajo del bridge, no arriba.** JavaScript nunca toca la radio: manda comandos ("activá", "mandá") y lee el ledger. El motivo es duro — el hilo de JS de React Native no está confiablemente vivo en background, y un telegrama que llega con la pantalla apagada tiene que ser verificado, deduplicado y guardado igual. Ver `bridge.md`.
 
 El backend **NO usa Nearby**. No sabe nada del grafo mesh. Cuando un nodo con Internet aparece, ese nodo toma su ledger local y lo postea por HTTP. El backend recibe JSON por API REST/WebSocket exactamente igual que si viniera de cualquier cliente.
 
@@ -26,14 +33,14 @@ Esto mata el modelo mental incorrecto "Backend → Nearby → teléfonos". La re
 
 ## Decisión de fondo
 
-ZIRO usa **Google Nearby Connections** como capa de transporte radio. **NO implementa Wi-Fi Direct ni BLE directamente**.
+Replica usa **Google Nearby Connections** como capa de transporte radio. **NO implementa Wi-Fi Direct ni BLE directamente**.
 
 ## Por qué Nearby Connections
 
 - Abstrae Wi-Fi Direct + BLE en una sola API.
 - Maneja automáticamente: **descubrimiento, autenticación, encriptación de tránsito, re-conexión tras pérdida de contacto**.
 - Diseñado exactamente para nuestro caso: "descubrir dispositivos cercanos, transferir datos sin Internet".
-- Cross-platform (Android + iOS), pero para 36h nos enfocamos en Android Kotlin.
+- Para 36h el alcance es Android. La API de iOS es distinta y queda fuera.
 
 ## Lo que Nearby Connections **NO** hace (lo hacemos nosotros)
 
@@ -41,22 +48,22 @@ ZIRO usa **Google Nearby Connections** como capa de transporte radio. **NO imple
 - ❌ No resuelve TTL/hop → nuestro código.
 - ❌ No resuelve gossip/sincronización de ledgers → nuestro código.
 - ❌ No garantiza orden de entrega → aceptamos que no (es best-effort).
-- ❌ No resuelve persistencia entre sesiones → Room/SQLite nuestro.
+- ❌ No resuelve persistencia entre sesiones → nuestro `TelegramLedger` (en memoria en MVP, Room en Fase 5).
 
 ## ServiceId
 
 ```kotlin
-private const val SERVICE_ID = "ziro.relay.v1"
+private const val SERVICE_ID = "replica.relay.v1"
 ```
 
-Este ID es público en el APK. Permite que solo dispositivos ZIRO con la misma versión del protocolo se reconozcan entre sí. Versión `v1` permite migrar a `v2` sin romper compatibilidad hacia atrás.
+Este ID es público en el APK. Permite que solo dispositivos Replica con la misma versión del protocolo se reconozcan entre sí. Versión `v1` permite migrar a `v2` sin romper compatibilidad hacia atrás.
 
 ## Estrategia de discovery
 
 ```kotlin
 Nearby.getConnectionsClient(context).startAdvertising(
     SERVICE_ID,
-    "ZIRO Relay",  // human-readable name visible en el peer
+    "Replica Relay",  // human-readable name visible en el peer
     connectionLifecycleCallback,
     AdvertisingOptions.Builder()
         .setStrategy(Strategy.P2P_STAR)  // un nodo central + varios periféricos
@@ -82,7 +89,7 @@ Cuando A descubre a B (o viceversa), se dispara `onEndpointFound(endpointId, inf
 
 ```kotlin
 Nearby.getConnectionsClient(context).requestConnection(
-    localEndpointName,    // ej: "ziro-A-${hash}"
+    localEndpointName,    // ej: "replica-A-${hash}"
     endpointId,
     connectionLifecycleCallback
 )
@@ -117,14 +124,14 @@ Una vez conectados, A y B ejecutan el protocolo de gossip:
 ### Fase 4 — Payload de telegrama individual
 
 ```kotlin
-val telegramBytes = telegram.toJsonString().toByteArray()  // ~120 bytes
+val telegramBytes = TelegramCodec.encode(telegram)  // ~550-700 bytes
 val payload = Payload.fromBytes(telegramBytes)
 Nearby.getConnectionsClient(context).sendPayload(endpointId, payload)
 ```
 
 El receptor, en `onPayloadReceived(endpointId, payload)`:
 1. Deserialize JSON → `Telegram`.
-2. `mutex.withLock(t.id) { ledger.put(t.id, t) }` (dedup).
+2. Pasar los bytes CRUDOS a `IngestTelegram.handle(raw, from)`. No parsear y re-serializar: el HMAC se calcula sobre el canonical y re-serializar es como mueren las firmas.
 3. Enviar ACK: `Payload.fromBytes("ACK:${t.id}".toByteArray())`.
 
 ### Fase 5 — Lifecycle de la conexión
@@ -136,41 +143,76 @@ El receptor, en `onPayloadReceived(endpointId, payload)`:
 ## Limitaciones reales (declaration of honesty)
 
 - **Rango por hop: 50-200 m** en condiciones normales (urban denso puede ser 30 m). **No es 1 km.**
-- **Tiempo de handshake: 5-15 segundos** en condiciones normales. El payload (120 bytes) es instantáneo comparado.
+- **Tiempo de handshake: 5-15 segundos** en condiciones normales. El payload (~650 bytes) es instantáneo comparado — el handshake domina por tres órdenes de magnitud.
 - **Máximo 3 conexiones simultáneas por nodo** (recomendado para batería/CPU).
-- **Teléfonos SIN ZIRO no participan** — limitación de Android. Por eso el modelo Relay/Gateway.
+- **Teléfonos SIN Replica no participan** — limitación de Android. Por eso el modelo Relay/Gateway.
 - **Background discovery se pausa** — la app tiene que estar abierta o con foreground service.
 
 ## Permisos Android requeridos
 
-```xml
-<!-- AndroidManifest.xml -->
-<uses-permission android:name="android.permission.BLUETOOTH" />
-<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+El manifest real está en `modules/ziro-relay/android/src/main/AndroidManifest.xml`. Al ser un módulo local de Expo, ese manifest **se mergea solo** al de la app durante `expo prebuild`: no hace falta ningún config plugin, y los permisos quedan versionados junto al código que los necesita. Tres cosas que la versión anterior de esta sección no tenía y que rompen la app:
 
-<!-- Para Android 12+ -->
+**1. Los permisos de Bluetooth legacy necesitan `maxSdkVersion`.** Sin eso, Android 12+ los trata como permisos activos y ensucia el prompt.
+
+**2. `NEARBY_WIFI_DEVICES` necesita `usesPermissionFlags="neverForLocation"`** en Android 13+.
+
+**3. El foreground service necesita permiso TIPADO.** En Android 14+ `startForeground()` **lanza excepción** sin `android:foregroundServiceType` en el `<service>` **y** el permiso `FOREGROUND_SERVICE_CONNECTED_DEVICE` declarado. Esto es un crash garantizado en teléfonos nuevos, y se debuggea como si fuera un problema de Nearby.
+
+```xml
+<uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+
 <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-<uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN" tools:targetApi="s" />
+
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+<uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+    android:usesPermissionFlags="neverForLocation" tools:targetApi="tiramisu" />
+
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 ```
 
-## Stack recomendado (Android)
-
-```gradle
-// build.gradle.kts
-dependencies {
-    implementation("com.google.android.gms:play-services-nearby:19.3.0")
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
-}
+```xml
+<service
+    android:name=".adapters.service.RelayForegroundService"
+    android:exported="false"
+    android:foregroundServiceType="connectedDevice" />
 ```
+
+**Declarar en el manifest no alcanza.** `BLUETOOTH_SCAN`, `BLUETOOTH_ADVERTISE`, `BLUETOOTH_CONNECT`, `NEARBY_WIFI_DEVICES`, las de location y `POST_NOTIFICATIONS` se piden **en runtime**. Si el usuario no las otorga, Nearby falla en silencio y parece hardware roto.
+
+## Colisión de conexión simétrica
+
+Los dos dispositivos hacen advertising **y** discovery al mismo tiempo. Eso significa que A encuentra a B en el mismo instante en que B encuentra a A, y **los dos llaman `requestConnection`**. Nearby sobrevive, pero quedan conexiones rechazadas o duplicadas que se ven como radio inestable.
+
+Desempate determinista: **solo el endpoint con el nombre lexicográficamente menor inicia.**
+
+```kotlin
+// adapters/nearby/NearbyTransport.kt
+internal fun shouldInitiateTo(remoteEndpointName: String): Boolean =
+    localEndpointName < remoteEndpointName
+```
+
+## Stack (Android)
+
+Versiones reales en `gradle/libs.versions.toml`. Lo relevante:
+
+```
+play-services-nearby        19.3.0
+kotlinx-serialization-json  1.7.3
+kotlinx-coroutines-android  1.9.0
+expo SDK                    52 (RN 0.76.5)
+minSdk                      26   (java.time sin desugaring)
+```
+
+**Room NO entra en el MVP.** El ledger arranca en memoria (`InMemoryLedger`) y Room llega en Fase 5 detrás del puerto `TelegramLedger`. Agregar Room + KSP en la Fase 1 cuesta una hora que el MVP no tiene.
 
 ## Alternativas consideradas y rechazadas
 
@@ -188,6 +230,20 @@ dependencies {
 | Riesgo | Mitigación |
 |---|---|
 | Nearby Connections discovery lento (>15s) | Duty-cycling agresivo; en demo, discovery continuo |
-| Permisos no otorgados al usuario | UI explica por qué cada permiso es necesario |
+| Permisos no otorgados al usuario | UI explica por qué cada permiso es necesario; se piden en runtime, no solo en el manifest |
 | Battery drain por advertising continuo | En estado ORPHAN, bajar frecuencia |
-| Wi-Fi del会場 interfiere | Apagar Wi-Fi de los teléfonos, usar solo datos para el gateway |
+| Wi-Fi del venue interfiere | **Desconectarse de la red del venue — NO apagar la radio Wi-Fi.** Ver abajo. |
+| Colisión de conexión simétrica | Tie-break por nombre de endpoint (`shouldInitiateTo`) |
+| Crash del foreground service en Android 14+ | `foregroundServiceType="connectedDevice"` + permiso tipado |
+
+## ⚠️ Las radios van PRENDIDAS
+
+Corrección importante respecto de versiones anteriores de este doc y de `demo-plan.md`, que decían "apagar Wi-Fi, apagar Bluetooth":
+
+**Nearby Connections necesita Bluetooth Y Wi-Fi encendidos.** BLE hace el discovery, Wi-Fi Direct hace el canal de datos. Apagar cualquiera de las dos mata la demo. Modo avión apaga las dos de entrada, así que hay que **re-prenderlas a mano** después de activarlo.
+
+Lo que sí hay que hacer es **desconectarse de la red Wi-Fi del venue** (radio prendida, sin red asociada). Eso es lo que reduce interferencia; apagar la radio no reduce interferencia, elimina el transporte.
+
+## No corre en emulador
+
+No hay Bluetooth ni Wi-Fi Direct virtualizado. **Dos teléfonos físicos o nada.** Por eso existe `FakeTransport`: implementa el mismo puerto `PeerTransport` en proceso, así que todo el pipeline (encode → transmitir → decode → verificar → dedup → guardar) se puede ejercitar en un solo teléfono o en un emulador. Del lado de la UI, `fakeRelayClient` cumple el mismo rol y corre en **Expo Go**. Ver `bridge.md`.

@@ -1,0 +1,23 @@
+[project]
+name = "replica-backend"
+version = "0.1.0"
+description = "Replica emergency communication network - FastAPI backend (models layer)"
+requires-python = ">=3.11"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "fastapi>=0.115",
+    "scalar-fastapi>=1.8.2",
+    "alembic>=1.13",
+    "uvicorn[standard]>=0.30",
+    "h3>=4.1",
+    "python-dotenv>=1.0",
+    "httpx>=0.27",
+    # EMSC near-real-time earthquake trigger listener (module trigger_emsc).
+    "websockets>=12",
+    "cryptography>=43",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

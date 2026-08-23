@@ -2,29 +2,29 @@
 
 ## Concepto
 
-Cada nodo ZIRO mantiene una **base de datos local SQLite** con **TODOS los telegramas que vio**, no solo los que retransmite. Esta base se sincroniza con cada par usando un protocolo de **gossip** simple (diff de IDs primero, bytes después).
+Cada nodo Replica mantiene una **base de datos local SQLite** con **TODOS los telegramas que vio**, no solo los que retransmite. Esta base se sincroniza con cada par usando un protocolo de **gossip** simple (diff de IDs primero, bytes después).
 
 ### JSON vs SQLite — dos roles distintos
 
 | Capa | Qué es | Para qué |
 |---|---|---|
-| **JSON** (telegrama) | Paquete de transporte que viaja por la red mesh | Información en tránsito: ~200 bytes, inmutable, schema fijo (ver `protocol.md`) |
+| **JSON** (telegrama) | Paquete de transporte que viaja por la red mesh | Información en tránsito: ~550-700 bytes, inmutable salvo hop/ttl, schema fijo (ver `protocol.md`) |
 | **SQLite** (ledger) | **Memoria del nodo** | Persistencia local: dedup por id, store-and-forward cuando no hay Internet, re-transmisión al reconectarse, auditoría del recorrido del mensaje |
 
 **El JSON no reemplaza al SQLite.** El JSON es lo que se manda; el SQLite es lo que se recuerda. Cuando un nodo recibe un JSON, lo deserializa y lo guarda como fila. Si el nodo muere, el JSON se pierde; si solo pierde conexión, el SQLite le permite reintentar.
 
 ## Por qué esto importa (no es decoración)
 
-Sin ledger distribuido, ZIRO sería "solo otro mesh messenger". Con ledger distribuido, ZIRO se vuelve:
+Sin ledger distribuido, Replica sería "solo otro mesh messenger". Con ledger distribuido, Replica se vuelve:
 
-1. **Un repositorio distribuido de emergencias activas** — un rescatista con ZIRO offline puede ver qué personas se reportaron en su zona.
+1. **Un repositorio distribuido de emergencias activas** — un rescatista con Replica offline puede ver qué personas se reportaron en su zona.
 2. **Un sistema tolerante a fallos** — si un nodo se pierde, otros siguen teniendo la info.
 3. **Un sistema útil incluso sin Internet** — el ledger local es consultable desde la app.
 4. **Un sistema con store-and-forward real** — un nodo sin Internet puede acumular mensajes y flush-earlos apenas recupera señal.
 
 ## Encriptación local
 
-El ledger puede contener **datos sensibles**: nombre, tipo de sangre, contactos familiares, ubicación precisa. Si un teléfono cae en malas manos después del desastre, esa información no debe filtrarse.
+El ledger puede contener **datos sensibles**: nombre, tipo de sangre, alergias, medicación, ubicación precisa. Los contactos familiares y el documento ya NO viajan en el telegrama (ver `protocol.md`), pero sí viven en la tabla `profile` del dueño del teléfono. Si un teléfono cae en malas manos después del desastre, esa información no debe filtrarse.
 
 - **MVP demo:** SQLite plano. Aceptable para la hackatón en ambiente controlado.
 - **Producción:** **SQLCipher** (`net.zetetic:android-database-sqlcipher`) con clave derivada del device. Cada nodo que "encuentra" un teléfono abandonado no debe poder leer el contenido sin la clave.
@@ -33,7 +33,7 @@ La migración MVP → prod es drop-in porque SQLCipher implementa la misma API d
 
 ## Esquema SQLite (Room)
 
-Dos tablas centrales: `messages` (el contenido) y `hops` (la auditoría del recorrido). Más dos tablas auxiliares.
+Dos tablas centrales: `messages` (el contenido) y `hops` (la auditoría del recorrido). Más cinco auxiliares: `delivered_peers`, `evidence_chunks`, `profile`, `pending_wipes` y `events`.
 
 ```kotlin
 @Entity(tableName = "messages")
@@ -76,7 +76,65 @@ data class EvidenceChunkEntity(
     val sha256: String,
     val storedAt: Long
 )
+
+// ─── Tres tablas que faltaban en la versión anterior de este esquema ───
+
+/**
+ * El perfil del dueño del teléfono, cargado en onboarding. UNA sola fila.
+ * Sin esta tabla el nodo no puede generar un telegrama propio.
+ * Modelo de dominio: domain/Profile.kt
+ */
+@Entity(tableName = "profile")
+data class ProfileEntity(
+    @PrimaryKey val userId: String,
+    val fullName: String,
+    val docType: String,              // CC | TI | CE | PA | NIT
+    val docNumber: String,            // NO viaja en el telegrama
+    val birthDate: String,            // ISO-8601. Se guarda la fecha, no la edad.
+    val bloodType: String,            // A | B | AB | O
+    val bloodRh: String,              // + | -
+    val allergiesJson: String,        // List<String> serializada
+    val conditionsJson: String,
+    val medicationsJson: String,
+    val disability: String,           // NONE | MOBILITY | VISUAL | HEARING | COGNITIVE
+    val isPregnant: Boolean,
+    val weightKg: Int?,
+    val eps: String?,                 // NO viaja en el telegrama
+    val emergencyContactsJson: String, // NO viaja en el telegrama
+    val questionId: String,
+    val answerHash: String,           // la respuesta en claro NUNCA se guarda
+    val deviceSecret: String          // NUNCA sale del teléfono
+)
+
+/** La Regla L7 usaba pendingWipesDao contra una tabla que nadie había declarado. */
+@Entity(tableName = "pending_wipes")
+data class PendingWipe(
+    @PrimaryKey val eventId: String,
+    val wipeAt: Long
+)
+
+/** L7 necesita saber que un evento se cerró. Antes no había dónde anotarlo. */
+@Entity(tableName = "events")
+data class EventEntity(
+    @PrimaryKey val eventId: String,
+    val type: String,                 // EARTHQUAKE | FIRE | ...
+    val closed: Boolean = false,
+    val closedAt: Long? = null,
+    val firstSeenAt: Long
+)
 ```
+
+### Regla de oro: `payloadJson` se guarda VERBATIM
+
+El JSON se guarda **tal como llegó, byte por byte**. No se re-serializa al guardar.
+
+Y no es capricho: re-serializar puede cambiar el orden de los campos o el formato de los números, y **el HMAC deja de validar aguas abajo**. Se guardan los bytes originales para poder verificar contra exactamente lo que llegó.
+
+**Consecuencia que hay que asumir:** el wipe de la Regla L7 reescribe el `payloadJson`, así que **después del wipe el HMAC ya no valida y el telegrama no se puede reenviar.** Está bien — el evento ya está cerrado. Pero si no está documentado, alguien lo va a debuggear como si fuera un bug.
+
+### Puerto, no implementación
+
+Para el MVP el ledger es `InMemoryLedger` (un `LinkedHashMap`), detrás del puerto `ports/TelegramLedger.kt`. Room llega en Fase 5 y el swap es **una línea en `RelayContainer`**. Nada arriba del puerto cambia — esa es la razón por la que el puerto existe.
 
 ### Por qué dos tablas (messages + hops)
 
@@ -92,7 +150,7 @@ data class EvidenceChunkEntity(
 
 ```kotlin
 suspend fun onTelegram(t: Telegram, fromPeer: String?) {
-    mutex.withLock(t.id) {
+    mutex.withLock {  // mutex global del pipeline, NO por id — ver protocol.md secc. 5
         if (messagesDao.exists(t.id)) return@withLock  // ya lo tengo, ignoro silencioso
         messagesDao.insert(
             MessageEntity(
@@ -115,15 +173,21 @@ suspend fun onTelegram(t: Telegram, fromPeer: String?) {
 }
 ```
 
-### Regla L2 — TTL decrementa en retransmisión, hop incrementa
+### Regla L2 — Punto único de mutación: al ingestar, no al reenviar
+
+**Corrección respecto de la versión anterior de esta regla**, que mutaba al reenviar. Ahora el receptor muta **una vez, al ingestar**, y el reenvío es verbatim:
 
 ```kotlin
-fun prepareForward(t: Telegram): Telegram? {
-    val newTtl = t.ttl - 1
-    if (newTtl <= 0) return null  // llegó al límite, no reenviar
-    return t.copy(hop = t.hop + 1, ttl = newTtl)
+// domain/RelayPolicy.kt
+fun onIngest(t: Telegram): Telegram? {
+    if (t.ttl <= 0) return null
+    return t.copy(hop = t.hop + 1, ttl = t.ttl - 1)
 }
 ```
+
+Dos razones: mutar en ingest **y** en forward hace que `hop` cuente doble; y reenviar verbatim mantiene el HMAC válido de punta a punta. Ver `protocol.md` Regla 2.
+
+Lo que guarda el ledger ya **es** el payload exacto a reenviar. `ForwardPending` no muta nada.
 
 ### Regla L3 — Limpieza periódica por TTL y edad
 
@@ -141,7 +205,7 @@ suspend fun enforceCap(maxBytes: Long = 5_000_000) {
     val currentSize = dao.sizeInBytes()
     if (currentSize > maxBytes) {
         // borrar los más viejos hasta entrar en el cap
-        val toDelete = (currentSize - maxBytes) / 200  // ~200 bytes por telegrama
+        val toDelete = (currentSize - maxBytes) / 650  // ~650 bytes por telegrama con vital
         dao.deleteOldest(toDelete.toInt())
     }
 }
@@ -210,7 +274,9 @@ suspend fun runDueWipes(now: Long) {
 
 **Lo que se conserva después del wipe:** `id`, `user_id`, `event_id`, `event`, `timestamp`, `severity`, `hop`, `ttl`, `origin`, `status`. Suficiente para estadísticas anonimizadas ("fueron N personas afectadas en el evento EARTHQUAKE001"), nada más.
 
-**Lo que se borra:** `name`, `blood`, `age`, `medical_note`, `family_contact`, `location`, `question_id`, `answer_hash`. Datos que un atacante podría usar para identificar, localizar o contactar a la persona.
+**Lo que se borra:** el bloque `vital` completo (`name`, `age`, `blood`, `allergies`, `conditions`, `medications`, `disability`, `pregnant`), `location` y el bloque `verify` (`question_id`, `answer_hash`). Datos que un atacante podría usar para identificar, localizar o contactar a la persona.
+
+Nota: `family_contact` y el documento **ya no viajan en el telegrama** (ver `protocol.md`), así que no hay nada que borrar del payload. Sí viven en la tabla `profile` del dueño del teléfono, y esa tabla se protege con SQLCipher, no con el wipe.
 
 ## Protocolo de gossip (sync entre pares)
 
@@ -257,7 +323,7 @@ B hace lo mismo con sus IDs.
 ```kotlin
 suspend fun onTelegramBytesReceived(bytes: ByteArray, fromPeer: String) {
     val t = parseTelegram(bytes)
-    mutex.withLock(t.id) {
+    mutex.withLock {  // mutex global del pipeline, NO por id — ver protocol.md secc. 5
         if (dao.exists(t.id)) return@withLock
         dao.insert(t.toEntity())
         // marcar delivered
@@ -283,7 +349,7 @@ Si el ledger tiene > 100 IDs de diferencia, el que recibe puede pedir resumen pa
 
 ## Caso de uso del rescatista (el momento WOW)
 
-El rescatista con ZIRO abre la app → la app muestra automáticamente una lista de personas reportadas en la zona (últimas 24h, severidad ≥ 2). Esta lista se llena **por gossip con cualquier par que se acerque**.
+El rescatista con Replica abre la app → la app muestra automáticamente una lista de personas reportadas en la zona (últimas 24h, severidad ≥ 2). Esta lista se llena **por gossip con cualquier par que se acerque**.
 
 ```kotlin
 suspend fun showNearbyEmergencies(): List<Emergency> {
@@ -292,7 +358,7 @@ suspend fun showNearbyEmergencies(): List<Emergency> {
 }
 ```
 
-**Pitch:** "Un rescatista llega a una zona sin Internet. Apenas entra al rango de cualquier ZIRO cercano, recibe la lista de personas reportadas. No necesita Internet. La información ya está distribuida en los teléfonos de la gente alrededor."
+**Pitch:** "Un rescatista llega a una zona sin Internet. Apenas entra al rango de cualquier Replica cercano, recibe la lista de personas reportadas. No necesita Internet. La información ya está distribuida en los teléfonos de la gente alrededor."
 
 ## Lo que NO hace este ledger (declaration of honesty)
 
@@ -305,5 +371,5 @@ suspend fun showNearbyEmergencies(): List<Emergency> {
 
 - 5 nodos, 5 emergencias simuladas → cada nodo termina con las 5 en su ledger en < 60s.
 - Rescatista (6to nodo) entra al rango → recibe las 5 emergencias en < 30s vía gossip.
-- Tamaño del ledger después de 50 emergencias: ~10 KB (50 × ~200 bytes).
+- Tamaño del ledger después de 50 emergencias: ~33 KB (50 x ~650 bytes con bloque vital).
 - Tiempo de sync entre dos nodos con 50 IDs cada uno: < 5s.
