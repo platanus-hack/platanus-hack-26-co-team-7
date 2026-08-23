@@ -7,7 +7,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from scalar_fastapi import get_scalar_api_reference
 
 from app.cors import configure_cors
@@ -18,6 +18,7 @@ from app.modules.dashboard import router as dashboard
 from app.modules.gateway_sync.router import router as gateway_sync_router
 from app.modules.gateway_sync.events import router as gateway_events_router
 from app.modules.event_activation.router import router as event_activation_router
+from app.modules.event_activation.router import web_router as demo_web_trigger_router
 from app.modules.mobile_identity.router import router as mobile_identity_router
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             sgc_poller.run_sgc_poller(SessionLocal)
         )
         logger.info("SGC earthquake trigger poller started (%s)", settings.sgc_url)
+
+    # Optional automatic AI report delivery scheduler. Disabled by default
+    # (settings.ai_reports_enabled is False), so startup stays side-effect-free.
+    ai_scheduler_task: asyncio.Task | None = None
+    if settings.ai_reports_enabled:
+        from app.modules.ai_reports import scheduler as ai_scheduler
+
+        ai_scheduler_task = asyncio.create_task(
+            ai_scheduler.run_report_scheduler(SessionLocal)
+        )
+        logger.info("AI report scheduler started (every %ss)", settings.ai_report_scheduler_interval_s)
+
+    # Optional H3 spatial aggregator (gateway_sync.aggregator). Disabled by
+    # default (settings.aggregator_enabled is False), so startup stays
+    # side-effect-free.
+    aggregator_task: asyncio.Task | None = None
+    if settings.aggregator_enabled:
+        from app.modules.gateway_sync import aggregator as agg
+
+        aggregator_task = asyncio.create_task(
+            agg.run_aggregator(SessionLocal)
+        )
+        logger.info("Gateway H3 aggregator started (every %ss)", settings.aggregator_interval_s)
     yield
 
     if emsc_task is not None:
@@ -63,6 +87,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except asyncio.CancelledError:
             pass
         logger.info("SGC earthquake trigger poller stopped")
+
+    if ai_scheduler_task is not None:
+        ai_scheduler_task.cancel()
+        try:
+            await ai_scheduler_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("AI report scheduler stopped")
+
+    if aggregator_task is not None:
+        aggregator_task.cancel()
+        try:
+            await aggregator_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Gateway H3 aggregator stopped")
 
 
 def create_app() -> FastAPI:
@@ -90,6 +130,32 @@ def create_app() -> FastAPI:
     app.include_router(gateway_sync_router)
     app.include_router(gateway_events_router)
     app.include_router(event_activation_router)
+    # Anonymous; the route itself 404s unless DEMO_WEB_TRIGGER_ENABLED is set.
+    app.include_router(demo_web_trigger_router)
+
+    # Realtime broadcast channel: contract is an anonymous WS at the root
+    # path ("WS /ws"). It must NOT be mounted under /api/v1 (the dashboard
+    # router's prefix), otherwise clients that follow the contract get a 403
+    # because the path does not resolve. See dashboard/router.py.
+    @app.websocket("/ws")
+    async def ws_broadcast(websocket: WebSocket) -> None:
+        from fastapi import WebSocketDisconnect as _Disconnect
+        from app.core.ws import manager as ws_manager
+
+        if not ws_manager.origin_allowed(websocket.headers.get("origin")):
+            await websocket.close(code=1008)  # policy violation: untrusted origin
+            return
+
+        await ws_manager.connect(websocket)
+        try:
+            while True:
+                # Broadcast-only channel: client frames are read and ignored,
+                # the loop doubles as liveness detection for clean disconnects.
+                await websocket.receive_text()
+        except _Disconnect:
+            pass
+        finally:
+            ws_manager.disconnect(websocket)
 
     return app
 

@@ -1,1 +1,114 @@
 @import "tailwindcss";
+
+/**
+ * Design tokens sampled from the Replica mobile app (login + home screens):
+ * near-pure black, warm neutrals, desaturated signal colors, hairline borders
+ * and near-square corners. Web and app read as one system.
+ */
+@theme {
+  /* Surfaces — warm blacks, each step barely above the last. */
+  --color-void: #050505;
+  --color-shell: #0b0b0b;
+  --color-panel: #121211;
+  --color-panel-raised: #1a1a18;
+  --color-hairline: #262523;
+
+  /* Text — warm off-white down to a dim label gray. */
+  --color-bone: #e9e5de;
+  --color-ash: #8b8781;
+  --color-ash-dim: #5c5a55;
+
+  /* Telegram status signals — the same three the app badges use. */
+  --color-signal-emergency: #a06459;
+  --color-signal-help: #a98a52;
+  --color-signal-safe: #8d9086;
+  /* Restrained steel accent: mesh/live state, replaces the old bright sky. */
+  --color-signal-mesh: #6f8090;
+
+  /* Heatmap risk ramp — deliberately left on the original green/yellow/red:
+     it is data encoding read over the light OSM basemap, not UI chrome, and
+     it stays conventional so an operator reads it without a legend. */
+  --color-risk-low: #4caf50;
+  --color-risk-medium: #dcaf3c;
+  --color-risk-high: #dc3c3c;
+
+  --radius-card: 3px;
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03);
+  --shadow-highlight: 0 0 0 1px color-mix(in srgb, var(--color-signal-mesh) 35%, transparent);
+
+  --font-mono-figures: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-void);
+    color-scheme: dark;
+  }
+}
+
+/* The app's wordmark: light weight, wide tracking, all caps. */
+@utility wordmark {
+  font-weight: 300;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* The app's label treatment: small mono caps, wide tracking. */
+@utility label-mono {
+  font-family: var(--font-mono-figures);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+@keyframes report-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-report-in {
+  animation: report-in 0.35s ease-out;
+}
+
+/* Only the alert trace moves — the brand rule stays still. */
+@keyframes seismo-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-seismo {
+  animation: seismo-scroll 2.4s linear infinite;
+}
+
+@keyframes signal-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-signal-blink {
+  animation: signal-blink 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-report-in,
+  .animate-seismo,
+  .animate-signal-blink {
+    animation: none;
+  }
+}

@@ -44,3 +44,14 @@ export interface ReportsResponse {
   event_id?: string | null;
   reports: Report[];
 }
+
+/**
+ * Realtime `EVENT_OPENED` broadcast (backend/app/modules/trigger_emsc,
+ * trigger_sgc). EMSC sends `flynn_region`, SGC sends `place` — the region
+ * label is normalized to `place` before this shape is used in the UI.
+ */
+export interface EventAlert {
+  event_id: string;
+  mag: number | null;
+  place: string | null;
+}

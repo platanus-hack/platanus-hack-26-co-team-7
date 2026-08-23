@@ -91,6 +91,21 @@ def _env_int(default: int, *names: str) -> int:
         return default
 
 
+def _normalize_llm_base_url(raw: str) -> str:
+    """Accept either a base URL or a full chat-completions URL.
+
+    Providers publish the full endpoint (HuggingFace's router advertises
+    ``.../v1/chat/completions``) while ai_reports/generator.py appends
+    ``/chat/completions`` itself. Trimming the suffix here means either form
+    can be pasted into .env without producing a doubled path.
+    """
+    url = raw.strip().rstrip("/")
+    suffix = "/chat/completions"
+    if url.endswith(suffix):
+        url = url[: -len(suffix)]
+    return url
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -100,6 +115,8 @@ class Settings:
     llm_api_key: str
     llm_model: str
     llm_base_url: str
+    llm_max_tokens: int
+    llm_timeout_s: float
     # HTTP report generation is an internal operation. An empty value disables
     # the endpoint rather than allowing unauthenticated fallback access.
     internal_reports_api_key: str
@@ -128,14 +145,39 @@ class Settings:
     sgc_max_lat: float
     sgc_min_lon: float
     sgc_max_lon: float
+    # Automatic SCHEDULED report delivery (ai_reports.scheduler). Disabled by
+    # default so demo startup stays free of side effects; when enabled, the
+    # first report is delivered as soon as the open event has aggregated cells
+    # and then one every ai_report_every_minutes during the first
+    # ai_report_window_hours after occurred_at.
+    ai_reports_enabled: bool
+    ai_report_scheduler_interval_s: int
+    ai_report_every_minutes: int
+    ai_report_window_hours: int
+    # H3 spatial aggregation of ingested telegrams (gateway_sync.aggregator).
+    # Disabled by default so demo startup stays side-effect-free; when enabled
+    # it rebuilds received_cells for the latest open event each tick.
+    aggregator_enabled: bool
+    aggregator_interval_s: int
+    # Public, unauthenticated demo trigger used by the web dashboard button to
+    # stand in for the EMSC/SGC pollers during a live presentation. It WRITES
+    # (rebuilds the demo event), so it stays off unless explicitly enabled and
+    # must never be turned on in a real deployment.
+    demo_web_trigger_enabled: bool
 
 
 settings = Settings(
     database_url=_require_database_url(),
     cors_origins=_parse_cors_origins(os.environ.get("BACKEND_CORS_ORIGINS")),
-    llm_api_key=os.environ.get("LLM_API_KEY", ""),
-    llm_model=_env_or("gpt-4o-mini", "LLM_MODEL"),
-    llm_base_url=_env_or("https://api.openai.com/v1", "LLM_BASE_URL"),
+    # HUGGINGFACE_* are accepted as aliases so a provider's own env block can be
+    # pasted into .env unchanged; LLM_* still wins when both are present.
+    llm_api_key=_env_or("", "LLM_API_KEY", "HUGGINGFACE_API_KEY"),
+    llm_model=_env_or("gpt-4o-mini", "LLM_MODEL", "HUGGINGFACE_MODEL"),
+    llm_base_url=_normalize_llm_base_url(
+        _env_or("https://api.openai.com/v1", "LLM_BASE_URL", "HUGGINGFACE_API_URL")
+    ),
+    llm_max_tokens=_env_int(1024, "LLM_MAX_TOKENS", "HUGGINGFACE_MAX_TOKENS"),
+    llm_timeout_s=_env_float(30_000.0, "LLM_TIMEOUT_MS", "HUGGINGFACE_TIMEOUT_MS") / 1000.0,
     internal_reports_api_key=os.environ.get("INTERNAL_REPORTS_API_KEY", "").strip(),
     gov_department=_env_or("CUNDINAMARCA", "GOV_DEPARTMENT"),
     emsc_enabled=_env_bool(False, "EMSC_ENABLED"),
@@ -158,4 +200,11 @@ settings = Settings(
     sgc_max_lat=_env_float(14.0, "SGC_MAX_LAT"),
     sgc_min_lon=_env_float(-80.0, "SGC_MIN_LON"),
     sgc_max_lon=_env_float(-66.0, "SGC_MAX_LON"),
+    ai_reports_enabled=_env_bool(False, "AI_REPORTS_ENABLED"),
+    ai_report_scheduler_interval_s=_env_int(15, "AI_REPORT_SCHEDULER_INTERVAL_S"),
+    ai_report_every_minutes=_env_int(30, "AI_REPORT_EVERY_MINUTES"),
+    ai_report_window_hours=_env_int(6, "AI_REPORT_WINDOW_HOURS"),
+    aggregator_enabled=_env_bool(False, "AGGREGATOR_ENABLED"),
+    aggregator_interval_s=_env_int(30, "AGGREGATOR_INTERVAL_S"),
+    demo_web_trigger_enabled=_env_bool(False, "DEMO_WEB_TRIGGER_ENABLED"),
 )
