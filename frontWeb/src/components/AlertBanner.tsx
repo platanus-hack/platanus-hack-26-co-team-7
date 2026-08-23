@@ -13,6 +13,11 @@ export default function AlertBanner({ alert, onOpenMap, onDismiss }: AlertBanner
       role="alert"
       className="relative overflow-hidden rounded-card border border-signal-emergency/45 bg-panel text-left"
     >
+      {/* Breathing accent bar — anchors the left edge without shouting. */}
+      <span
+        aria-hidden="true"
+        className="animate-breathe pointer-events-none absolute inset-y-0 left-0 w-px bg-signal-emergency"
+      />
       {/* Live instrument readout along the bottom edge — never behind the text. */}
       <SeismographTrace
         variant="alert"
@@ -34,14 +39,13 @@ export default function AlertBanner({ alert, onOpenMap, onDismiss }: AlertBanner
             />
           </svg>
           <div>
-            <p className="label-mono flex flex-wrap items-center gap-x-2 text-signal-emergency">
+            <p className="label-mono flex items-center gap-2 text-signal-emergency">
               <span className="animate-signal-blink">Sismo detectado</span>
-              <span className="text-ash-dim">/</span>
-              <span className="font-mono-figures tabular-nums tracking-normal">
-                {alert.mag != null ? `M ${alert.mag.toFixed(1)}` : "M —"}
-              </span>
             </p>
-            <p className="mt-2 text-sm leading-relaxed text-bone">
+            <p className="display-num mt-2 text-4xl leading-none text-bone">
+              {alert.mag != null ? `M ${alert.mag.toFixed(1)}` : "M —"}
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-bone">
               {alert.place ?? "Ubicación en verificación"}
             </p>
             <p className="mt-1 text-xs text-ash">

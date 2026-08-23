@@ -65,10 +65,10 @@ function ReportCard({ report, highlighted }: { report: Report; highlighted?: boo
   const content = report.content;
   return (
     <article
-      className={`relative overflow-hidden rounded-card border p-4 ${
+      className={`relative overflow-hidden rounded-card border p-4 transition duration-200 hover:-translate-y-0.5 ${
         highlighted
           ? "animate-report-in border-signal-mesh/45 bg-panel-raised shadow-highlight"
-          : "border-hairline bg-panel"
+          : "border-hairline bg-panel hover:border-ash-dim"
       }`}
     >
       {highlighted && <div className="absolute inset-x-0 top-0 h-px bg-signal-mesh/70" />}
@@ -111,7 +111,7 @@ function ReportCard({ report, highlighted }: { report: Report; highlighted?: boo
               className="label-mono rounded-card border border-hairline px-2 py-1.5 text-ash-dim"
             >
               {FIGURE_LABELS[key] ?? key}{" "}
-              <strong className="font-mono-figures font-semibold tabular-nums tracking-normal text-bone">
+              <strong className="font-mono-figures text-base font-semibold tabular-nums tracking-normal text-bone">
                 {value}
               </strong>
             </span>

@@ -10,3 +10,11 @@ export const API_BASE_URL: string =
 
 export const WS_URL: string =
   (import.meta.env.VITE_WS_URL as string | undefined) ?? "ws://localhost:8000/ws";
+
+// Direct download of the mobile APK, served as a static asset from
+// frontWeb/public/replica.apk (Vite copies public/* to the site root, so it
+// resolves to /replica.apk). Set VITE_APK_URL only to point at an
+// externally-hosted build instead.
+export const APK_DOWNLOAD_URL: string =
+  (import.meta.env.VITE_APK_URL as string | undefined) ??
+  `${import.meta.env.BASE_URL}replica.apk`;
