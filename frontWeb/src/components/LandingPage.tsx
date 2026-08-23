@@ -125,15 +125,32 @@ export default function LandingPage({
             {wsConnected ? "Red activa" : "Reconectando"}
           </p>
         </div>
-        {hasOpenEvent && (
-          <button
-            type="button"
-            onClick={onOpenDashboard}
-            className="label-mono rounded-card border border-hairline px-4 py-2.5 text-ash transition-colors hover:border-ash-dim hover:text-bone focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-bone/60"
-          >
-            Mapa en vivo
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {!alert && (
+            <button
+              type="button"
+              onClick={onRunDemoTrigger}
+              disabled={triggerState === "pending"}
+              title={
+                triggerState === "error"
+                  ? "No se pudo activar. Revisá que el backend esté corriendo."
+                  : undefined
+              }
+              className="label-mono rounded-card border border-signal-emergency/60 px-4 py-2.5 text-signal-emergency transition-colors hover:bg-signal-emergency/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-signal-emergency focus-visible:ring-offset-2 focus-visible:ring-offset-panel disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Demo
+            </button>
+          )}
+          {hasOpenEvent && (
+            <button
+              type="button"
+              onClick={onOpenDashboard}
+              className="label-mono rounded-card border border-hairline px-4 py-2.5 text-ash transition-colors hover:border-ash-dim hover:text-bone focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-bone/60"
+            >
+              Mapa en vivo
+            </button>
+          )}
+        </div>
       </header>
 
       <main>
@@ -173,27 +190,6 @@ export default function LandingPage({
                   El mapa de calor solo existe mientras hay una emergencia abierta: la red
                   únicamente registra datos de personas a partir de ese momento.
                 </p>
-
-                <div className="mt-6 border-t border-hairline pt-6">
-                  <p className="mx-auto max-w-md text-sm leading-relaxed text-ash">
-                    Para la demostración, este botón ocupa el lugar de EMSC y SGC: abre un evento
-                    real en el backend y lo anuncia igual que lo haría un sismo detectado.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={onRunDemoTrigger}
-                    disabled={triggerState === "pending"}
-                    className="label-mono mt-5 rounded-card border border-signal-emergency/60 px-8 py-4 text-signal-emergency transition-colors hover:bg-signal-emergency/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-signal-emergency focus-visible:ring-offset-2 focus-visible:ring-offset-panel disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {triggerState === "pending" ? "Activando…" : "Simular sismo"}
-                  </button>
-                  {triggerState === "error" && (
-                    <p role="alert" className="mt-4 text-xs leading-relaxed text-signal-help">
-                      No se pudo activar. Revisá que el backend esté corriendo y que
-                      DEMO_WEB_TRIGGER_ENABLED esté en true.
-                    </p>
-                  )}
-                </div>
               </div>
             )}
           </div>
