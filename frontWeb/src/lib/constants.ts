@@ -10,7 +10,3 @@ export const API_BASE_URL: string =
 
 export const WS_URL: string =
   (import.meta.env.VITE_WS_URL as string | undefined) ?? "ws://localhost:8000/ws";
-
-/** OpenFreeMap style: open basemap, no API key required (design D8). */
-export const MAP_STYLE_URL =
-  "https://tiles.openfreemap.org/styles/liberty";

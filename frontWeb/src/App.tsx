@@ -1,21 +1,30 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
-import { fetchHeatmap, fetchReports } from "./lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchHeatmap, fetchReports, triggerDemoEvent } from "./lib/api";
 import { FALLBACK_CELLS, FALLBACK_REPORTS } from "./lib/fallbackData";
-import type { HeatmapCell, Report } from "./lib/types";
-import ReportFeed from "./components/ReportFeed";
+import type { EventAlert, HeatmapCell, Report } from "./lib/types";
+import Dashboard, { type DataMode } from "./components/Dashboard";
+import LandingPage from "./components/LandingPage";
 import { useRealtime } from "./hooks/useRealtime";
 
-// Map chunk is deferred (design D8): deck.gl + maplibre-gl load only here,
-// after the shell (header + feed + states) has painted.
-const MapView = lazy(() => import("./components/MapView"));
+type View = "landing" | "dashboard";
 
-type DataMode = "loading" | "live" | "fallback";
+/** Idle → the demo trigger is in flight → it failed and we said so. */
+export type TriggerState = "idle" | "pending" | "error";
 
 export default function App() {
+  const [view, setView] = useState<View>("landing");
   const [cells, setCells] = useState<HeatmapCell[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [mode, setMode] = useState<DataMode>("loading");
   const [reloadKey, setReloadKey] = useState(0);
+  const [now, setNow] = useState(() => new Date());
+  const [alert, setAlert] = useState<EventAlert | null>(null);
+  const [triggerState, setTriggerState] = useState<TriggerState>("idle");
+
+  // The id of the open event, straight from the backend: /heatmap returns null
+  // when no event is open (cold start). This is what gates the heatmap — the
+  // network only records people's data once an emergency is active.
+  const [openEventId, setOpenEventId] = useState<string | null>(null);
 
   const initialLoad = useCallback(async () => {
     setMode("loading");
@@ -23,6 +32,7 @@ export default function App() {
       const [heatmap, reps] = await Promise.all([fetchHeatmap(), fetchReports()]);
       setCells(heatmap.cells); // may be empty → explicit empty state
       setReports(reps.reports);
+      setOpenEventId(heatmap.event_id ?? null);
       setMode("live");
     } catch {
       // Backend unreachable: embedded demo data keeps the dashboard alive.
@@ -35,6 +45,7 @@ export default function App() {
   const refreshHeatmap = useCallback(async () => {
     try {
       const data = await fetchHeatmap();
+      if (data.event_id) setOpenEventId(data.event_id);
       if (data.cells.length > 0) setCells(data.cells);
     } catch {
       /* keep last known cells */
@@ -50,87 +61,81 @@ export default function App() {
     }
   }, []);
 
-  // Initial load of both endpoints; retried via the error-state button.
+  // EMSC/SGC (or the demo trigger) opened an event: surface it on the landing
+  // hero and unlock the heatmap, even if the dashboard was never visited.
+  const handleEventOpened = useCallback(
+    (next: EventAlert) => {
+      setAlert(next);
+      setOpenEventId(next.event_id);
+      setTriggerState("idle");
+      // The announcement arrives before the aggregated data does.
+      void refreshHeatmap();
+      void refreshReports();
+    },
+    [refreshHeatmap, refreshReports],
+  );
+
+  const runDemoTrigger = useCallback(async () => {
+    setTriggerState("pending");
+    try {
+      // The backend also broadcasts EVENT_OPENED, which lands in
+      // handleEventOpened; applying the response too keeps the button working
+      // even if the WebSocket happens to be down.
+      handleEventOpened(await triggerDemoEvent());
+    } catch {
+      setTriggerState("error");
+    }
+  }, [handleEventOpened]);
+
+  // Initial load of both endpoints; retried via the error-state button. Kept
+  // active regardless of view so the map/reports are warm the moment someone
+  // opens the dashboard from the landing.
   useEffect(() => {
     void initialLoad();
   }, [initialLoad, reloadKey]);
 
-  const wsConnected = useRealtime(refreshHeatmap, refreshReports);
+  // Purely decorative clock — lets an operator eyeball how fresh the last
+  // report is against the current time. Touches no fetch/WS state.
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const clockLabel = useMemo(
+    () => now.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    [now],
+  );
+
+  const wsConnected = useRealtime(refreshHeatmap, refreshReports, handleEventOpened);
+
+  // Demo data has no real event behind it, so it must not unlock the map on
+  // its own — otherwise an unreachable backend would look like an emergency.
+  const hasOpenEvent = openEventId !== null;
+
+  if (view === "landing" || !hasOpenEvent) {
+    return (
+      <LandingPage
+        alert={alert}
+        wsConnected={wsConnected}
+        hasOpenEvent={hasOpenEvent}
+        triggerState={triggerState}
+        loading={mode === "loading"}
+        onDismissAlert={() => setAlert(null)}
+        onRunDemoTrigger={runDemoTrigger}
+        onOpenDashboard={() => setView("dashboard")}
+      />
+    );
+  }
 
   return (
-    <div className="flex h-screen flex-col bg-slate-900 text-slate-100">
-      <header className="flex items-center justify-between border-b border-slate-700 bg-slate-950 px-4 py-3">
-        <h1 className="text-lg font-bold tracking-tight sm:text-xl">
-          Replica — Estado del desastre
-        </h1>
-        <div className="flex items-center gap-2 text-xs sm:text-sm">
-          {mode === "loading" && (
-            <span className="rounded-full bg-slate-800 px-3 py-1 font-medium text-slate-300">
-              Cargando…
-            </span>
-          )}
-          {mode === "live" && (
-            <>
-              <span className="rounded-full bg-slate-800 px-3 py-1 font-medium text-slate-300">
-                Datos en vivo
-              </span>
-              <span
-                className={`rounded-full px-3 py-1 font-medium ${
-                  wsConnected
-                    ? "bg-emerald-500/15 text-emerald-400"
-                    : "bg-amber-500/15 text-amber-400"
-                }`}
-              >
-                {wsConnected ? "● En vivo" : "● Reconectando…"}
-              </span>
-            </>
-          )}
-          {mode === "fallback" && (
-            <span className="rounded-full bg-amber-500/15 px-3 py-1 font-medium text-amber-400">
-              Datos de demostración — backend no disponible
-            </span>
-          )}
-        </div>
-      </header>
-
-      <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <section className="relative min-h-[50vh] flex-1">
-          <Suspense
-            fallback={
-              <div className="flex h-full items-center justify-center text-sm text-slate-400">
-                Cargando mapa…
-              </div>
-            }
-          >
-            <MapView cells={cells} />
-          </Suspense>
-          {mode === "loading" && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/70 text-sm text-slate-300">
-              Cargando datos del evento…
-            </div>
-          )}
-          {mode === "fallback" && (
-            <div className="absolute inset-x-0 top-0 flex justify-center p-2">
-              <button
-                type="button"
-                onClick={() => setReloadKey((k) => k + 1)}
-                className="rounded-md border border-amber-500/40 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-slate-900"
-              >
-                Backend no disponible — reintentar conexión
-              </button>
-            </div>
-          )}
-          {mode === "live" && cells.length === 0 && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <p className="rounded-lg bg-slate-950/85 px-4 py-2 text-sm text-slate-300">
-                Aún no hay datos del evento.
-              </p>
-            </div>
-          )}
-        </section>
-
-        <ReportFeed reports={reports} loading={mode === "loading"} />
-      </main>
-    </div>
+    <Dashboard
+      cells={cells}
+      reports={reports}
+      mode={mode}
+      wsConnected={wsConnected}
+      clockLabel={clockLabel}
+      onRetry={() => setReloadKey((k) => k + 1)}
+      onBack={() => setView("landing")}
+    />
   );
 }

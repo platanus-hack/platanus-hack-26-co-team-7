@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "./constants";
-import type { HeatmapResponse, ReportsResponse } from "./types";
+import type { EventAlert, HeatmapResponse, ReportsResponse } from "./types";
 
 /**
  * Typed fetches against the readonly public API
@@ -21,4 +21,19 @@ export function fetchHeatmap(): Promise<HeatmapResponse> {
 
 export function fetchReports(): Promise<ReportsResponse> {
   return getJson<ReportsResponse>("/api/v1/reports");
+}
+
+/**
+ * Stands in for the EMSC/SGC pollers during a demo: the backend rebuilds the
+ * demo event and broadcasts EVENT_OPENED, so every connected dashboard reacts
+ * exactly as it would for a real quake. Rejects when the trigger is disabled
+ * (404) or the backend is unreachable — the caller decides what to show.
+ */
+export async function triggerDemoEvent(): Promise<EventAlert> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/demo/trigger`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`POST /api/v1/demo/trigger failed: ${res.status}`);
+  }
+  const data = (await res.json()) as { event_id: string; mag: number; place: string };
+  return { event_id: data.event_id, mag: data.mag, place: data.place };
 }
