@@ -62,6 +62,7 @@ interface ZiroRelayNativeModule {
   scheduleGatewaySync(): Promise<void>;
   activateEmergency(event: string): Promise<void>;
   setEmergencyUserStatus(status: string): Promise<void>;
+  getCurrentLocation(): { lat: number; lng: number } | null;
   getRadioState(): { bluetoothEnabled: boolean; wifiEnabled: boolean };
   openBluetoothSettings(): void;
   openWifiSettings(): void;
@@ -138,6 +139,10 @@ export function getDeviceIdentity(): DeviceIdentity { return JSON.parse(native.g
 export function scheduleGatewaySync(): Promise<void> { return native.scheduleGatewaySync(); }
 export async function activateEmergency(event: ActiveEmergencyEvent): Promise<void> { await native.activateEmergency(JSON.stringify(event)); }
 export async function setEmergencyUserStatus(status: string): Promise<void> { await native.setEmergencyUserStatus(status); }
+
+export function getCurrentLocation(): { lat: number; lng: number } | null {
+  return native.getCurrentLocation();
+}
 
 export function getRadioState(): { bluetoothEnabled: boolean; wifiEnabled: boolean } {
   return native.getRadioState();

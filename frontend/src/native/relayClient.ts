@@ -43,6 +43,7 @@ export interface RelayClient {
   scheduleGatewaySync(): Promise<void>;
   activateEmergency(event: ActiveEmergencyEvent): Promise<void>;
   setEmergencyUserStatus(status: string): Promise<void>;
+  getCurrentLocation(): { lat: number; lng: number } | null;
   getRadioState(): { bluetoothEnabled: boolean; wifiEnabled: boolean };
   openBluetoothSettings(): void;
   openWifiSettings(): void;
@@ -93,6 +94,7 @@ export function createRelayClient(): RelayClient {
     scheduleGatewaySync: native.scheduleGatewaySync,
     activateEmergency: native.activateEmergency,
     setEmergencyUserStatus: native.setEmergencyUserStatus,
+    getCurrentLocation: native.getCurrentLocation,
     getRadioState: native.getRadioState,
     openBluetoothSettings: native.openBluetoothSettings,
     openWifiSettings: native.openWifiSettings,

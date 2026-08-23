@@ -10,6 +10,7 @@
     "build:dev": "eas build --profile development --platform android",
     "build:preview": "eas build --profile preview --platform android",
     "typecheck": "tsc --noEmit",
+    "build:release": "cd android && ./gradlew assembleRelease && cp app/build/outputs/apk/release/app-release.apk ../../frontWeb/app/app-release.apk && cp app/build/outputs/apk/release/app-release.apk ../../frontWeb/public/replica.apk",
     "test:engine": "cd android && ./gradlew :ziro-relay:testDebugUnitTest",
     "ios": "expo run:ios"
   },

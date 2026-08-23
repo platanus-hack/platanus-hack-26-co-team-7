@@ -256,6 +256,11 @@ class ZiroRelayModule : Module() {
             scope.launch { RelayContainer.announcePresence(force = true) }
         }
 
+        Function("getCurrentLocation") {
+            val point = RelayContainer.location.current()
+            if (point != null) mapOf("lat" to point.lat, "lng" to point.lng) else null
+        }
+
         Function("getRadioState") {
             val context = RelayContainer.context()
             val btAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()

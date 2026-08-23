@@ -177,8 +177,11 @@ export function HomeScreen({ onProfileSave, onLogout, api, showDemoTrigger, emer
     try { await client.setEmergencyUserStatus(status); } catch { /* native may not be available */ }
     const eventIdMatch = emergencyStatus.match(/Event detected: (\S+)/);
     const eventId = eventIdMatch?.[1] ?? 'DEMO-EMERGENCY';
+    const severity = status === 'EMERGENCY' ? 5 : status === 'NEED_HELP' ? 4 : 1;
+    let location: { lat: number; lng: number } | null = null;
+    try { location = client.getCurrentLocation(); } catch { /* location may not be available */ }
     try {
-      await relay.sendTelegram({ eventId, event: EVENT_TYPES.EARTHQUAKE, status, location: null, severity: status === PERSON_STATUSES.EMERGENCY ? 5 : status === PERSON_STATUSES.NEED_HELP ? 4 : 1 });
+      await relay.sendTelegram({ eventId, event: EVENT_TYPES.EARTHQUAKE, status, location, severity });
     } catch { /* telegram queuing may fail without full relay */ }
     setEmergencyResponded(true);
   };
@@ -669,8 +672,14 @@ function InboxPanel({ telegrams, onSafeResponse }: InboxPanelProps) {
               {bloodText ? (
                 <View style={ix.chip}><Text style={ix.chipText}>Blood: {bloodText}</Text></View>
               ) : null}
-              {v?.allergies && v.allergies.length > 0 && v.allergies[0] !== 'none' ? (
-                <View style={[ix.chip, ix.chipWarning]}><Text style={ix.chipText}>Allergies: {v.allergies.join(', ')}</Text></View>
+              {filterNone(v?.allergies) ? (
+                <View style={[ix.chip, ix.chipWarning]}><Text style={ix.chipText}>Allergies: {filterNone(v?.allergies)}</Text></View>
+              ) : null}
+              {filterNone(v?.conditions) ? (
+                <View style={[ix.chip, ix.chipWarning]}><Text style={ix.chipText}>Conditions: {filterNone(v?.conditions)}</Text></View>
+              ) : null}
+              {filterNone(v?.medications) ? (
+                <View style={ix.chip}><Text style={ix.chipText}>Meds: {filterNone(v?.medications)}</Text></View>
               ) : null}
               {v?.disability && v.disability !== 'NONE' ? (
                 <View style={[ix.chip, ix.chipWarning]}><Text style={ix.chipText}>{enumLabel(v.disability)}</Text></View>
@@ -708,6 +717,12 @@ function InboxPanel({ telegrams, onSafeResponse }: InboxPanelProps) {
   );
 }
 
+function filterNone(items?: string[]): string | null {
+  if (!items || items.length === 0) return null;
+  const filtered = items.filter(i => i.toLowerCase() !== 'none');
+  return filtered.length > 0 ? filtered.join(', ') : null;
+}
+
 function TelegramDetail({ entry, answer, setAnswer, onSafe, onClose }: { entry: LedgerEntry; answer: string; setAnswer: (v: string) => void; onSafe: () => void; onClose: () => void }) {
   const { telegram } = entry;
   const v = telegram.vital;
@@ -742,9 +757,9 @@ function TelegramDetail({ entry, answer, setAnswer, onSafe, onClose }: { entry: 
         <View style={{ gap: 6, marginTop: 4 }}>
           <DetailRow label="Blood type" value={v?.blood} />
           <DetailRow label="Age" value={v?.age != null ? `${v.age} years` : null} />
-          <DetailRow label="Allergies" value={v?.allergies && v.allergies.length > 0 ? v.allergies.join(', ') : null} />
-          <DetailRow label="Conditions" value={v?.conditions && v.conditions.length > 0 ? v.conditions.join(', ') : null} />
-          <DetailRow label="Medications" value={v?.medications && v.medications.length > 0 ? v.medications.join(', ') : null} />
+          <DetailRow label="Allergies" value={filterNone(v?.allergies)} />
+          <DetailRow label="Conditions" value={filterNone(v?.conditions)} />
+          <DetailRow label="Medications" value={filterNone(v?.medications)} />
           <DetailRow label="Disability" value={v?.disability && v.disability !== 'NONE' ? enumLabel(v.disability) : 'None'} />
           <DetailRow label="Pregnant" value={v?.pregnant ? 'Yes' : 'No'} />
         </View>
