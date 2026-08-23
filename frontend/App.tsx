@@ -60,8 +60,8 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     setEmergencyStatus(`Event detected: ${event.eventId} revision ${event.revision}.`);
     try { await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision }); } catch { /* native relay may not be available */ }
     try { await relay.start(); } catch { /* auto-start relay on emergency */ }
+    try { await relay.scheduleGatewaySync(); } catch { /* gateway sync optional */ }
     setEmergencyStatus('Relay active; durable emergency outbox created.');
-    try { await syncOutbox(); } catch { /* gateway sync optional */ }
   };
   useEffect(() => {
     if (!profile) return;
@@ -84,8 +84,8 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
       setEmergencyStatus(`Event detected: ${event.eventId} revision ${event.revision}.`);
       try { await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision }); } catch { /* native relay may not be available in demo */ }
       try { await relay.start(); } catch { /* auto-start relay on emergency */ }
+      try { await relay.scheduleGatewaySync(); } catch { /* gateway sync optional in demo */ }
       setEmergencyStatus('Relay active; durable emergency outbox created.');
-      try { await syncOutbox(); } catch { /* gateway sync optional in demo */ }
     } catch (error) {
       setEmergencyStatus(`Trigger error: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
