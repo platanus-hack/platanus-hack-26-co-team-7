@@ -37,3 +37,14 @@ export async function triggerDemoEvent(): Promise<EventAlert> {
   const data = (await res.json()) as { event_id: string; mag: number; place: string };
   return { event_id: data.event_id, mag: data.mag, place: data.place };
 }
+
+/**
+ * Closes the demo event opened by triggerDemoEvent, mirroring it in reverse.
+ * Rejects when the trigger is disabled (404) or the backend is unreachable.
+ */
+export async function stopDemoEvent(): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/demo/stop`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`POST /api/v1/demo/stop failed: ${res.status}`);
+  }
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchHeatmap, fetchReports, triggerDemoEvent } from "./lib/api";
+import { fetchHeatmap, fetchReports, stopDemoEvent, triggerDemoEvent } from "./lib/api";
 import { FALLBACK_CELLS, FALLBACK_REPORTS } from "./lib/fallbackData";
 import type { EventAlert, HeatmapCell, Report } from "./lib/types";
 import Dashboard, { type DataMode } from "./components/Dashboard";
@@ -87,6 +87,27 @@ export default function App() {
     }
   }, [handleEventOpened]);
 
+  // The demo trigger's counterpart: closes the open event and drops the map
+  // back into its cold-start (no event) state, on this dashboard and every
+  // other one connected — same broadcast-plus-direct-apply pattern as above.
+  const handleEventClosed = useCallback(() => {
+    setAlert(null);
+    setOpenEventId(null);
+    setCells([]);
+    setReports([]);
+    setTriggerState("idle");
+  }, []);
+
+  const runStopTrigger = useCallback(async () => {
+    setTriggerState("pending");
+    try {
+      await stopDemoEvent();
+      handleEventClosed();
+    } catch {
+      setTriggerState("error");
+    }
+  }, [handleEventClosed]);
+
   // Initial load of both endpoints; retried via the error-state button. Kept
   // active regardless of view so the map/reports are warm the moment someone
   // opens the dashboard from the landing.
@@ -106,7 +127,7 @@ export default function App() {
     [now],
   );
 
-  const wsConnected = useRealtime(refreshHeatmap, refreshReports, handleEventOpened);
+  const wsConnected = useRealtime(refreshHeatmap, refreshReports, handleEventOpened, handleEventClosed);
 
   // Demo data has no real event behind it, so it must not unlock the map on
   // its own — otherwise an unreachable backend would look like an emergency.
@@ -122,6 +143,7 @@ export default function App() {
         loading={mode === "loading"}
         onDismissAlert={() => setAlert(null)}
         onRunDemoTrigger={runDemoTrigger}
+        onRunStopTrigger={runStopTrigger}
         onOpenDashboard={() => setView("dashboard")}
       />
     );

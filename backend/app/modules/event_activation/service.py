@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models.event import Event, EventActivation, EventType
+from app.models.event import Event, EventActivation, EventCloseReason, EventType
 
 
 @dataclass(frozen=True)
@@ -62,3 +62,22 @@ def activate_event(
     )
     session.flush()
     return ActivatedEvent(event=event, created=True)
+
+
+def close_event(
+    session: Session,
+    *,
+    event_id: str,
+    closed_at: datetime,
+    reason: EventCloseReason,
+) -> Event | None:
+    """Close an open event; a no-op (returns None) if it doesn't exist or is already closed."""
+    event = session.execute(
+        select(Event).where(Event.event_id == event_id, Event.closed_at.is_(None)).with_for_update()
+    ).scalar_one_or_none()
+    if event is None:
+        return None
+    event.closed_at = closed_at
+    event.closed_reason = reason
+    session.flush()
+    return event
