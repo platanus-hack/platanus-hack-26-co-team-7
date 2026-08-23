@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+build/
+dist/
+
+# Local env (never bake secrets into the image)
+.env
+
+# Git
+.git/
+.gitignore
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Test / logs
+.pytest_cache/
+.mypy_cache/
+*.log

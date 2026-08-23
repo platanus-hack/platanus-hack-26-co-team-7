@@ -1,0 +1,46 @@
+# Render Blueprint — one-click deploy of the Replica backend web service.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Secrets (DATABASE_URL, AUTH_*, LLM_API_KEY, INTERNAL_REPORTS_API_KEY) are
+# NOT stored here: they are created in the Render dashboard with `sync: false`.
+# This file only declares the service and defaults that are safe to commit.
+
+services:
+  - type: web
+    name: replica-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /docs
+    envVars:
+      # --- Wired in the dashboard (sync: false) ---
+      - key: DATABASE_URL
+        sync: false # postgresql+psycopg://... — required, fail-fast if missing
+      - key: AUTH_JWT_SECRET
+        sync: false
+      - key: AUTH_REFRESH_TOKEN_PEPPER
+        sync: false
+      - key: LLM_API_KEY
+        sync: false # optional: empty -> deterministic fallback template
+      - key: INTERNAL_REPORTS_API_KEY
+        sync: false
+      # --- Safe defaults (non-secret), see backend/.env.example ---
+      - key: BACKEND_CORS_ORIGINS
+        value: https://replica-dashboard.onrender.com
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: LLM_BASE_URL
+        value: https://api.openai.com/v1
+      - key: GOV_DEPARTMENT
+        value: CUNDINAMARCA
+      - key: DEMO_TRIGGER_ENABLED
+        value: "false"
+      - key: EMSC_ENABLED
+        value: "false"
+      - key: SGC_ENABLED
+        value: "false"
+      - key: AI_REPORTS_ENABLED
+        value: "false"
+      - key: AGGREGATOR_ENABLED
+        value: "false"
