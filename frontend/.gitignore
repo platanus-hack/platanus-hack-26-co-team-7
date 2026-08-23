@@ -13,8 +13,9 @@ web-build/
 /ios/
 
 # Gradle output for the local Expo modules. The sources under modules/*/android/
-# are tracked, but their build/ directories are not.
+# are tracked, but their build/ directories and per-module Gradle cache are not.
 modules/*/android/build/
+modules/*/android/.gradle/
 
 *.log
 .DS_Store
