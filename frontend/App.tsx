@@ -56,6 +56,7 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     if (!event) return;
     setEmergencyStatus(`Event detected: ${event.eventId} revision ${event.revision}.`);
     try { await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision }); } catch { /* native relay may not be available */ }
+    try { await relay.start(); } catch { /* auto-start relay on emergency */ }
     setEmergencyStatus('Relay active; durable emergency outbox created.');
     try { await syncOutbox(); } catch { /* gateway sync optional */ }
   };
@@ -64,7 +65,7 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
     let active = true;
     const reconcile = () => { if (active && AppState.currentState === 'active') void reconcileActiveEvents().catch((error: unknown) => active && setEmergencyStatus(`Emergency activation error: ${error instanceof Error ? error.message : 'unknown error'}`)); };
     reconcile();
-    const interval = setInterval(reconcile, 30_000);
+    const interval = setInterval(reconcile, 5_000);
     const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') reconcile(); });
     return () => { active = false; clearInterval(interval); subscription.remove(); };
   }, [api, profile, relay]);
@@ -78,6 +79,7 @@ function ConfiguredApp({ apiBaseUrl: buildApiBaseUrl }: { apiBaseUrl: string }) 
       const event = await api.activateDemoEvent(activationKey.current);
       setEmergencyStatus(`Event detected: ${event.eventId} revision ${event.revision}.`);
       try { await relay.activateEmergency({ eventId: event.eventId, event: event.event, revision: event.revision }); } catch { /* native relay may not be available in demo */ }
+      try { await relay.start(); } catch { /* auto-start relay on emergency */ }
       setEmergencyStatus('Relay active; durable emergency outbox created.');
       try { await syncOutbox(); } catch { /* gateway sync optional in demo */ }
     } catch (error) {

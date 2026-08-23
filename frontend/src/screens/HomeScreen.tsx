@@ -172,21 +172,25 @@ export function HomeScreen({ onProfileSave, onLogout, api, showDemoTrigger, emer
 
   const networkActive = relay.status !== 'IDLE';
 
-  if (!emergencyResponded && emergencyStatus.includes('Relay active')) {
+  const sendEmergencyTelegram = async (status: 'EMERGENCY' | 'NEED_HELP' | 'SAFE') => {
     const client = createRelayClient();
+    try { await client.setEmergencyUserStatus(status); } catch { /* native may not be available */ }
+    const eventIdMatch = emergencyStatus.match(/Event detected: (\S+)/);
+    const eventId = eventIdMatch?.[1] ?? 'DEMO-EMERGENCY';
+    try {
+      await relay.sendTelegram({ eventId, event: EVENT_TYPES.EARTHQUAKE, status, location: null, severity: status === PERSON_STATUSES.EMERGENCY ? 5 : status === PERSON_STATUSES.NEED_HELP ? 4 : 1 });
+    } catch { /* telegram queuing may fail without full relay */ }
+    setEmergencyResponded(true);
+  };
+
+  if (!emergencyResponded && emergencyStatus.includes('Relay active')) {
     return (
       <View style={shared.screenBg}>
         <EmergencyAlertScreen
           emergencyStatus={emergencyStatus}
-          onSafe={() => {
-            void client.setEmergencyUserStatus('SAFE').catch(() => undefined);
-            setEmergencyResponded(true);
-          }}
-          onNeedHelp={() => {
-            void client.setEmergencyUserStatus('NEED_HELP').catch(() => undefined);
-            setEmergencyResponded(true);
-          }}
-          onTimeout={() => setEmergencyResponded(true)}
+          onSafe={() => void sendEmergencyTelegram(PERSON_STATUSES.SAFE)}
+          onNeedHelp={() => void sendEmergencyTelegram(PERSON_STATUSES.NEED_HELP)}
+          onTimeout={() => void sendEmergencyTelegram(PERSON_STATUSES.EMERGENCY)}
         />
       </View>
     );
