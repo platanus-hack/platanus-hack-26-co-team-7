@@ -25,7 +25,11 @@ except ModuleNotFoundError:  # pragma: no cover - only during bare installs
 # Comma-separated list of allowed CORS origins for the static web dashboard
 # (openspec/changes/dashboard-web/design.md D5). Wildcard "*" with
 # credentials is forbidden by the public-api-readonly spec.
-_DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://localhost:8081")
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://localhost:8081",
+    "https://replica-web.onrender.com",
+)
 
 
 def _parse_cors_origins(raw: str | None) -> tuple[str, ...]:

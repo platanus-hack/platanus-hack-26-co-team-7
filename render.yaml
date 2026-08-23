@@ -27,7 +27,7 @@ services:
         sync: false
       # --- Safe defaults (non-secret), see backend/.env.example ---
       - key: BACKEND_CORS_ORIGINS
-        value: https://replica-dashboard.onrender.com
+        value: https://replica-web.onrender.com,https://replica-dashboard.onrender.com
       - key: LLM_MODEL
         value: gpt-4o-mini
       - key: LLM_BASE_URL
@@ -35,7 +35,9 @@ services:
       - key: GOV_DEPARTMENT
         value: CUNDINAMARCA
       - key: DEMO_TRIGGER_ENABLED
-        value: "false"
+        value: "true"
+      - key: DEMO_WEB_TRIGGER_ENABLED
+        value: "true"
       - key: EMSC_ENABLED
         value: "false"
       - key: SGC_ENABLED
