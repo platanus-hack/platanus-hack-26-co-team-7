@@ -6,10 +6,10 @@ Después de un terremoto hay **4 escenarios** donde el teléfono del afectado qu
 
 | Caso | Descripción | Estado del teléfono |
 |---|---|---|
-| **C1 — Evacuación consciente** | Persona salió caminando, olvidó el teléfono | Cargado, conectado a ZIRO peers |
+| **C1 — Evacuación consciente** | Persona salió caminando, olvidó el teléfono | Cargado, conectado a Replica peers |
 | **C2 — Golpe de calor / caída** | Persona herida, teléfono cayó | Batería OK, sin usuario |
 | **C3 — Edificio colapsado** | Teléfono atrapado bajo escombros | Batería dura horas/días |
-| **C4 — Aislado** | Sin ZIRO peers en rango | Muere solo en horas sin entregar nada |
+| **C4 — Aislado** | Sin Replica peers en rango | Muere solo en horas sin entregar nada |
 
 **En todos los casos:** la responsabilidad de sacar la información del origen **pasa del dueño al sistema**.
 
@@ -17,7 +17,7 @@ Después de un terremoto hay **4 escenarios** donde el teléfono del afectado qu
 
 ### Opción 2 — Pre-evacuación chunks (los primeros 30 segundos)
 
-Cuando el usuario pulsa EMERGENCY MODE, el origen **no espera** — empieza inmediatamente a repartir chunks del video entre los primeros ZIRO que encuentre.
+Cuando el usuario pulsa EMERGENCY MODE, el origen **no espera** — empieza inmediatamente a repartir chunks del video entre los primeros Replica que encuentre.
 
 ```kotlin
 class EvidenceDistributor(
@@ -54,7 +54,7 @@ suspend fun enterOrphanMode() {
     
     while (state == State.ORPHAN) {
         val beacon = Beacon(
-            app = "ziro",
+            app = "replica",
             v = 1,
             hasEmergency = true,
             ledgerSize = ledgerDao.count(),
@@ -66,7 +66,7 @@ suspend fun enterOrphanMode() {
 }
 ```
 
-Cuando un peer ZIRO (ej. un rescatista) entra al rango, lo descubre, se conecta, y descarga el ledger + chunks del origen.
+Cuando un peer Replica (ej. un rescatista) entra al rango, lo descubre, se conecta, y descarga el ledger + chunks del origen.
 
 ### SQLite schema adicional
 
@@ -104,6 +104,54 @@ suspend fun onRescuerConnected(peerId: String) {
     }
 }
 ```
+
+## Caso C5 — Familiar responde desde otro dispositivo autorizado
+
+Hay un quinto escenario que no encaja en C1-C4 y que vale la pena resolver explícitamente: **el teléfono del afectado no está disponible, pero otro dispositivo Replica de un familiar o contacto autorizado sí está operativo.**
+
+| Caso | Descripción | Cómo se resuelve |
+|---|---|---|
+| **C5 — Familiar con Replica responde en nombre** | El afectado no tiene su teléfono a mano (lo perdió, lo dejó, está inconsciente). Un familiar tiene Replica instalado y vinculado al `user_id` del afectado. | El familiar abre la app, elige "Confirmar en nombre de {nombre}", tipea la respuesta a `question_id`. La app emite un nuevo telegrama con `status: "SAFE"`, el mismo `user_id` y un `origin` distinto (el del familiar). El backend valida el `answer_hash` y cierra el caso. |
+
+### Por qué este caso importa
+
+Sin C5, la familia solo puede **esperar**. Con C5, la familia puede **actuar** aunque el afectado no responda. Es la diferencia entre "sabemos que Juan está perdido" y "Juan está bien, lo confirmó su mamá desde su teléfono".
+
+### Flujo técnico
+
+```
+1. Familiar A abre Replica en su teléfono.
+2. Va a "Contactos vinculados" → ve a Juan con estado EMERGENCY/NEED_HELP.
+3. Toca "Confirmar seguridad en nombre de Juan".
+4. La app le pregunta: "¿Cuál es la respuesta a '{question_id}'?"
+   (la pregunta ya viene pre-cargada del perfil de Juan).
+5. Familiar tipea la respuesta.
+6. La app hashea la respuesta (SHA-256) localmente.
+7. Emite un nuevo telegrama:
+   {
+     "v": 1,
+     "id": "<nuevo UUID>",
+     "user_id": "USER_JUAN",          ← mismo user_id que Juan
+     "event_id": "EARTHQUAKE001",    ← mismo evento
+     "status": "SAFE",
+     "question_id": "PET_NAME_42",
+     "answer_hash": "abcxyz...",      ← hash de la respuesta tipeada
+     "location": null,                ← el familiar no tiene la ubicación de Juan
+     "timestamp": ...,
+     "origin": "<hash del teléfono del familiar>"  ← distinto del origin de Juan
+   }
+8. Este telegrama viaja por la misma red mesh.
+9. El backend compara `answer_hash` con el que tenía registrado para Juan
+   en `EARTHQUAKE001`. Si coincide → Emergency Orchestrator transiciona
+   a SAFE y notifica a la familia.
+```
+
+### Garantías de seguridad
+
+- El **backend** es la única entidad que compara hashes. Un nodo mesh nunca ve la respuesta en claro.
+- El dispositivo autorizado tiene que haber sido **vinculado previamente** al `user_id` del afectado (no cualquier Replica puede responder por cualquiera). El vínculo se establece en la app con un código de invitación o QR antes del evento.
+- El `origin` del telegrama de respuesta queda registrado — si alguien abusa del mecanismo respondiendo SAFE fraudulentamente, queda auditado.
+- El telegrama de respuesta **no** incluye `location` (el familiar no la tiene necesariamente). El backend solo usa la `location` del último telegrama con `EMERGENCY/NEED_HELP` real.
 
 ## Tradeoffs reconocidos
 

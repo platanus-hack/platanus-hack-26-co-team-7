@@ -1,13 +1,13 @@
 {
-  // ZIRO — red de comunicación de emergencia que sigue funcionando
+  // Replica — red de comunicación de emergencia que sigue funcionando
   // cuando la infraestructura colapsa. Hackathon Platanus 26 Bogotá, team-7.
-  "project-name": "ZIRO",
+  "project-name": "Replica",
 
   // Short one-line summary of your project (in Spanish).
   "project-oneliner-spanish": "Red de comunicación de emergencia que sigue funcionando cuando la infraestructura colapsa.",
 
   // Brief description of your project (in Spanish).
-  "project-description-spanish": "Después de un terremoto las redes celulares se saturan. ZIRO convierte los teléfonos Android en una red temporal que se comunica por Wi-Fi Direct sin Internet: cada dispositivo transporta pequeños telegramas de emergencia (~120 bytes) y acumula un registro distribuido de personas afectadas. Cuando un nodo con Internet aparece, todo llega al servidor y la familia ve dónde está su ser querido. Platanus Hack 26 — Bogotá, track Emergencias.",
+  "project-description-spanish": "Después de un terremoto las redes celulares se saturan. Replica convierte los teléfonos Android en una red temporal que se comunica por Wi-Fi Direct sin Internet: cada dispositivo transporta pequeños telegramas de emergencia (~120 bytes) y acumula un registro distribuido de personas afectadas. Cuando un nodo con Internet aparece, todo llega al servidor y la familia ve dónde está su ser querido. Platanus Hack 26 — Bogotá, track Emergencias.",
 
   // Public URL where your project is deployed and running.
   // Must be a valid URL, for example: https://my-project.vercel.app
