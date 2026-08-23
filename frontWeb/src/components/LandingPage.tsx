@@ -12,6 +12,7 @@ interface LandingPageProps {
   loading: boolean;
   onDismissAlert: () => void;
   onRunDemoTrigger: () => void;
+  onRunStopTrigger: () => void;
   onOpenDashboard: () => void;
 }
 
@@ -105,6 +106,7 @@ export default function LandingPage({
   loading,
   onDismissAlert,
   onRunDemoTrigger,
+  onRunStopTrigger,
   onOpenDashboard,
 }: LandingPageProps) {
   return (
@@ -126,7 +128,21 @@ export default function LandingPage({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {!alert && (
+          {hasOpenEvent ? (
+            <button
+              type="button"
+              onClick={onRunStopTrigger}
+              disabled={triggerState === "pending"}
+              title={
+                triggerState === "error"
+                  ? "No se pudo detener. Revisá que el backend esté corriendo."
+                  : undefined
+              }
+              className="label-mono rounded-card border border-signal-safe/60 px-4 py-2.5 text-signal-safe transition-colors hover:bg-signal-safe/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-signal-safe focus-visible:ring-offset-2 focus-visible:ring-offset-panel disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Detener
+            </button>
+          ) : (
             <button
               type="button"
               onClick={onRunDemoTrigger}

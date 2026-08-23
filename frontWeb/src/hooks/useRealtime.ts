@@ -11,7 +11,8 @@ import type { EventAlert } from "../lib/types";
  * - CELLS_UPDATED / REPORT_CREATED messages trigger the matching refetch.
  * - EVENT_OPENED (trigger_emsc / trigger_sgc) fires `onEventOpened` directly,
  *   unthrottled — an earthquake alert must never be dropped by the burst
- *   collapsing applied to the other two message kinds.
+ *   collapsing applied to the other two message kinds. EVENT_CLOSED
+ *   (demo stop) fires `onEventClosed` the same way.
  *
  * A WS outage never breaks the UI: it keeps showing the last known data.
  */
@@ -30,12 +31,13 @@ export function useRealtime(
   onCellsUpdated: () => void,
   onReportCreated: () => void,
   onEventOpened?: (alert: EventAlert) => void,
+  onEventClosed?: () => void,
 ): boolean {
   const [connected, setConnected] = useState(false);
 
   // Latest callbacks without re-subscribing the socket on every render.
-  const handlers = useRef({ onCellsUpdated, onReportCreated, onEventOpened });
-  handlers.current = { onCellsUpdated, onReportCreated, onEventOpened };
+  const handlers = useRef({ onCellsUpdated, onReportCreated, onEventOpened, onEventClosed });
+  handlers.current = { onCellsUpdated, onReportCreated, onEventOpened, onEventClosed };
 
   // Throttle per handler: keeps the last-scheduled fire so a burst still
   // triggers exactly one refetch at most MIN_UPDATE_INTERVAL_MS apart.
@@ -103,6 +105,8 @@ export function useRealtime(
               mag: msg.mag ?? null,
               place: msg.place ?? msg.flynn_region ?? null,
             });
+          } else if (msg.type === "EVENT_CLOSED") {
+            handlers.current.onEventClosed?.();
           }
         } catch {
           // Malformed frame: ignore, keep last known state.
