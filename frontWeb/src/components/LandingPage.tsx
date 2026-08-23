@@ -285,7 +285,7 @@ export default function LandingPage({
         <Section
           eyebrow="Privacidad"
           heading="Nadie queda expuesto en el mapa."
-          lead="El mapa público solo muestra celdas de unos 500 metros con un conteo de personas y una intensidad. Nunca se publica una coordenada individual, un nombre ni un identificador de dispositivo."
+          lead="El mapa público solo muestra zonas de unos 500 metros con un conteo de personas en peligro. Nunca se publica una coordenada individual, un nombre ni un identificador de dispositivo."
         />
       </main>
 
