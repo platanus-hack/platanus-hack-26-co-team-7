@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "./constants";
-import type { EventAlert, HeatmapResponse, ReportsResponse } from "./types";
+import type { EventAlert, HeatmapResponse, PersonsResponse, ReportsResponse } from "./types";
 
 /**
  * Typed fetches against the readonly public API
@@ -17,6 +17,10 @@ async function getJson<T>(path: string): Promise<T> {
 
 export function fetchHeatmap(): Promise<HeatmapResponse> {
   return getJson<HeatmapResponse>("/api/v1/heatmap");
+}
+
+export function fetchPersons(): Promise<PersonsResponse> {
+  return getJson<PersonsResponse>("/api/v1/persons");
 }
 
 export function fetchReports(): Promise<ReportsResponse> {

@@ -50,6 +50,19 @@ export interface ReportsResponse {
  * trigger_sgc). EMSC sends `flynn_region`, SGC sends `place` — the region
  * label is normalized to `place` before this shape is used in the UI.
  */
+export interface PersonMarker {
+  user_id: string;
+  status: "EMERGENCY" | "NEED_HELP" | "SAFE";
+  lat: number;
+  lng: number;
+  updated_at: string;
+}
+
+export interface PersonsResponse {
+  event_id?: string | null;
+  persons: PersonMarker[];
+}
+
 export interface EventAlert {
   event_id: string;
   mag: number | null;

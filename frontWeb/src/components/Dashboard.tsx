@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react";
-import type { HeatmapCell, Report } from "../lib/types";
+import type { HeatmapCell, PersonMarker, Report } from "../lib/types";
 import ReportFeed from "./ReportFeed";
 
 // Map chunk is deferred (design D8): deck.gl + maplibre-gl load only here,
@@ -10,6 +10,7 @@ export type DataMode = "loading" | "live" | "fallback";
 
 interface DashboardProps {
   cells: HeatmapCell[];
+  persons: PersonMarker[];
   reports: Report[];
   mode: DataMode;
   wsConnected: boolean;
@@ -20,6 +21,7 @@ interface DashboardProps {
 
 export default function Dashboard({
   cells,
+  persons,
   reports,
   mode,
   wsConnected,
@@ -79,7 +81,7 @@ export default function Dashboard({
               </div>
             }
           >
-            <MapView cells={cells} />
+            <MapView cells={cells} persons={persons} />
           </Suspense>
           {mode === "loading" && (
             <div className="label-mono absolute inset-0 flex flex-col items-center justify-center gap-4 bg-void/80 text-ash">

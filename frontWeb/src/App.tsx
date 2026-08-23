@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchHeatmap, fetchReports, stopDemoEvent, triggerDemoEvent } from "./lib/api";
+import { fetchHeatmap, fetchPersons, fetchReports, stopDemoEvent, triggerDemoEvent } from "./lib/api";
 import { FALLBACK_CELLS, FALLBACK_REPORTS } from "./lib/fallbackData";
-import type { EventAlert, HeatmapCell, Report } from "./lib/types";
+import type { EventAlert, HeatmapCell, PersonMarker, Report } from "./lib/types";
 import Dashboard, { type DataMode } from "./components/Dashboard";
 import LandingPage from "./components/LandingPage";
 import { useRealtime } from "./hooks/useRealtime";
@@ -14,6 +14,7 @@ export type TriggerState = "idle" | "pending" | "error";
 export default function App() {
   const [view, setView] = useState<View>("landing");
   const [cells, setCells] = useState<HeatmapCell[]>([]);
+  const [persons, setPersons] = useState<PersonMarker[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [mode, setMode] = useState<DataMode>("loading");
   const [reloadKey, setReloadKey] = useState(0);
@@ -29,9 +30,10 @@ export default function App() {
   const initialLoad = useCallback(async () => {
     setMode("loading");
     try {
-      const [heatmap, reps] = await Promise.all([fetchHeatmap(), fetchReports()]);
+      const [heatmap, reps, ppl] = await Promise.all([fetchHeatmap(), fetchReports(), fetchPersons()]);
       setCells(heatmap.cells); // may be empty → explicit empty state
       setReports(reps.reports);
+      setPersons(ppl.persons);
       setOpenEventId(heatmap.event_id ?? null);
       setMode("live");
     } catch {
@@ -44,9 +46,10 @@ export default function App() {
 
   const refreshHeatmap = useCallback(async () => {
     try {
-      const data = await fetchHeatmap();
+      const [data, ppl] = await Promise.all([fetchHeatmap(), fetchPersons()]);
       if (data.event_id) setOpenEventId(data.event_id);
       if (data.cells.length > 0) setCells(data.cells);
+      setPersons(ppl.persons);
     } catch {
       /* keep last known cells */
     }
@@ -152,6 +155,7 @@ export default function App() {
   return (
     <Dashboard
       cells={cells}
+      persons={persons}
       reports={reports}
       mode={mode}
       wsConnected={wsConnected}

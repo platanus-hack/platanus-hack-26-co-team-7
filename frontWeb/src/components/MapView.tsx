@@ -2,9 +2,9 @@ import { useMemo } from "react";
 import DeckGL from "@deck.gl/react";
 import { MapView as DeckMapView } from "@deck.gl/core";
 import { H3HexagonLayer, TileLayer } from "@deck.gl/geo-layers";
-import { BitmapLayer } from "@deck.gl/layers";
+import { BitmapLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { PickingInfo } from "@deck.gl/core";
-import type { HeatmapCell } from "../lib/types";
+import type { HeatmapCell, PersonMarker } from "../lib/types";
 
 /**
  * Planar map. The heavy MapLibre basemap engine (WebGL relief) is GONE.
@@ -57,11 +57,24 @@ const LEGEND_GRADIENT = Array.from({ length: 6 }, (_, i) => intensityRgb((i / 5)
   ", ",
 );
 
+const STATUS_COLORS: Record<string, [number, number, number]> = {
+  EMERGENCY: [220, 50, 50],
+  NEED_HELP: [220, 160, 60],
+  SAFE: [80, 180, 80],
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  EMERGENCY: "Emergencia",
+  NEED_HELP: "Necesita ayuda",
+  SAFE: "A salvo",
+};
+
 interface MapViewProps {
   cells: HeatmapCell[];
+  persons?: PersonMarker[];
 }
 
-export default function MapView({ cells }: MapViewProps) {
+export default function MapView({ cells, persons = [] }: MapViewProps) {
   const baseLayer = useMemo(
     () =>
       new TileLayer({
@@ -103,7 +116,26 @@ export default function MapView({ cells }: MapViewProps) {
     [cells],
   );
 
-  const layers = useMemo(() => [baseLayer, zoneLayer], [baseLayer, zoneLayer]);
+  const personLayer = useMemo(
+    () =>
+      new ScatterplotLayer<PersonMarker>({
+        id: "replica-persons",
+        data: persons,
+        getPosition: (d: PersonMarker) => [d.lng, d.lat],
+        getFillColor: (d: PersonMarker) => [...(STATUS_COLORS[d.status] ?? [180, 180, 180]), 220],
+        getRadius: 120,
+        radiusMinPixels: 6,
+        radiusMaxPixels: 20,
+        pickable: true,
+        autoHighlight: true,
+        stroked: true,
+        getLineColor: [255, 255, 255, 180],
+        lineWidthMinPixels: 2,
+      }),
+    [persons],
+  );
+
+  const layers = useMemo(() => [baseLayer, zoneLayer, personLayer], [baseLayer, zoneLayer, personLayer]);
 
   return (
     <div className="relative h-full w-full">
@@ -111,25 +143,40 @@ export default function MapView({ cells }: MapViewProps) {
         initialViewState={INITIAL_VIEW}
         controller={true}
         views={new DeckMapView({ id: "main", repeat: true })}
-        getTooltip={(info: PickingInfo<HeatmapCell>) =>
-          info.object
-            ? {
-                html: `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-                    <span style="display:inline-block;width:6px;height:6px;border-radius:9999px;background:${intensityRgb(info.object.intensity)}"></span>
-                    <span style="letter-spacing:0.18em;text-transform:uppercase;font-size:0.6875rem;color:#8b8781">Riesgo ${riskLabel(info.object.intensity)}</span>
-                  </div>
-                  <b style="font-size:0.95rem;font-weight:600">${info.object.person_count}</b> <span style="color:#8b8781">personas en peligro</span>`,
-                style: {
-                  backgroundColor: "#121211",
-                  color: "#e9e5de",
-                  fontSize: "0.8rem",
-                  padding: "10px 12px",
-                  borderRadius: "3px",
-                  border: "1px solid #262523",
-                },
-              }
-            : null
-        }
+        getTooltip={(info: PickingInfo<HeatmapCell | PersonMarker>) => {
+          if (!info.object) return null;
+          const tooltipStyle = {
+            backgroundColor: "#121211",
+            color: "#e9e5de",
+            fontSize: "0.8rem",
+            padding: "10px 12px",
+            borderRadius: "3px",
+            border: "1px solid #262523",
+          };
+          if ("status" in info.object) {
+            const p = info.object as PersonMarker;
+            const color = STATUS_COLORS[p.status] ?? [180, 180, 180];
+            const label = STATUS_LABELS[p.status] ?? p.status;
+            return {
+              html: `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:rgb(${color.join(",")})"></span>
+                  <span style="font-weight:600">${label}</span>
+                </div>
+                <span style="color:#8b8781">Persona ${p.user_id}</span><br/>
+                <span style="color:#8b8781">${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</span>`,
+              style: tooltipStyle,
+            };
+          }
+          const cell = info.object as HeatmapCell;
+          return {
+            html: `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                <span style="display:inline-block;width:6px;height:6px;border-radius:9999px;background:${intensityRgb(cell.intensity)}"></span>
+                <span style="letter-spacing:0.18em;text-transform:uppercase;font-size:0.6875rem;color:#8b8781">Riesgo ${riskLabel(cell.intensity)}</span>
+              </div>
+              <b style="font-size:0.95rem;font-weight:600">${cell.person_count}</b> <span style="color:#8b8781">personas en peligro</span>`,
+            style: tooltipStyle,
+          };
+        }}
         layers={layers}
       />
 
@@ -153,6 +200,23 @@ export default function MapView({ cells }: MapViewProps) {
           <span>Alto</span>
         </div>
       </div>
+
+      {persons.length > 0 && (
+        <div className="pointer-events-none absolute bottom-3 right-16 rounded-card border border-hairline bg-void/90 px-3 py-2.5 shadow-card backdrop-blur-sm">
+          <div className="label-mono mb-2 text-ash-dim">Personas ({persons.length})</div>
+          {(["EMERGENCY", "NEED_HELP", "SAFE"] as const).map((status) => {
+            const count = persons.filter((p) => p.status === status).length;
+            if (count === 0) return null;
+            const [r, g, b] = STATUS_COLORS[status];
+            return (
+              <div key={status} className="flex items-center gap-2 py-0.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: `rgb(${r},${g},${b})` }} />
+                <span className="text-xs text-ash">{STATUS_LABELS[status]} ({count})</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Attribution required by the OSM tile usage policy. */}
       <div className="absolute bottom-0 right-0 bg-void/80 px-2 py-1 text-[10px] text-ash-dim backdrop-blur-sm">

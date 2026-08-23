@@ -34,10 +34,13 @@ from app.core.database import get_session
 from app.core.events import get_latest_open_event
 from app.models.analytics import ReceivedCell, Report
 from app.models.event import Event
+from app.modules.gateway_sync.models import PersonState
 from app.modules.dashboard.schemas import (
     Centroid,
     HeatmapCell,
     HeatmapResponse,
+    PersonMarker,
+    PersonsResponse,
     ReportOut,
     ReportsResponse,
 )
@@ -133,6 +136,46 @@ def get_reports(
                 content=report.content,
             )
             for report in reports
+        ],
+    )
+
+
+@router.get("/persons", response_model=PersonsResponse)
+def get_persons(
+    event_id: str | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> PersonsResponse:
+    if event_id is None:
+        latest = get_latest_open_event(session)
+        if latest is None:
+            return PersonsResponse(persons=[])
+        event_id = latest.event_id
+    elif session.get(Event, event_id) is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "EVENT_NOT_FOUND", "message": f"No event with id '{event_id}'."},
+        )
+
+    states = session.execute(
+        select(PersonState).where(
+            PersonState.event_id == event_id,
+            PersonState.emergency_lat.is_not(None),
+            PersonState.emergency_lng.is_not(None),
+        )
+    ).scalars().all()
+
+    return PersonsResponse(
+        event_id=event_id,
+        persons=[
+            PersonMarker(
+                user_id=s.user_id[:8],
+                status=s.current_status.value,
+                lat=s.emergency_lat,
+                lng=s.emergency_lng,
+                updated_at=s.updated_at.isoformat(),
+            )
+            for s in states
+            if s.emergency_lat is not None and s.emergency_lng is not None
         ],
     )
 

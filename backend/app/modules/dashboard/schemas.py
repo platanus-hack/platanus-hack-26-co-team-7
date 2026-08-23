@@ -49,6 +49,19 @@ class ReportsResponse(BaseModel):
     reports: list[ReportOut] = []
 
 
+class PersonMarker(BaseModel):
+    user_id: str
+    status: str
+    lat: float
+    lng: float
+    updated_at: str
+
+
+class PersonsResponse(BaseModel):
+    event_id: str | None = None
+    persons: list[PersonMarker] = []
+
+
 class ErrorResponse(BaseModel):
     """Typed error body, e.g. 404 ``EVENT_NOT_FOUND``."""
 
