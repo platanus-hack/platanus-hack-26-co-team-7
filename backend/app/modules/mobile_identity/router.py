@@ -110,6 +110,7 @@ def register(payload: RegisterRequest, session: Session = Depends(get_session)) 
     )
     session.add(person)
     session.add(UserCredential(user_id=user_id, password_hash=hash_password(payload.password)))
+    session.flush()
     _bind_device_identity(session, user_id, payload.device_identity.key_id, payload.device_identity.public_key, payload.device_identity.binding_proof)
     session.add_all(
         [MobileEmergencyContact(user_id=user_id, **contact.model_dump()) for contact in payload.emergency_contacts]

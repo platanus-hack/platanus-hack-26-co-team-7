@@ -26,7 +26,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 function friendlyApiError(status: number, _body: string): string {
   switch (status) {
-    case 401: return 'Invalid credentials. Please check your email and password.';
+    case 401: return 'Invalid credentials. Please check your document and password.';
     case 403: return 'Access denied. Your session may have expired.';
     case 404: return 'Resource not found.';
     case 409: return 'This account already exists. Try logging in instead.';
