@@ -604,7 +604,6 @@ interface InboxPanelProps { telegrams: LedgerEntry[]; onSafeResponse: (id: strin
  */
 function InboxPanel({ telegrams, onSafeResponse }: InboxPanelProps) {
   const [selected, setSelected] = useState<LedgerEntry | null>(null);
-  const [showCoordinates, setShowCoordinates] = useState(false);
   const [answer, setAnswer] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 1000); }, []);
@@ -621,122 +620,166 @@ function InboxPanel({ telegrams, onSafeResponse }: InboxPanelProps) {
 
   return (
     <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} colors={[C.accent]} />}>
-      <Text style={shared.label}>Telegrams stored locally</Text>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={shared.heading}>Inbox</Text>
+        <Text style={[shared.label, { color: C.accent }]}>{telegrams.length} RECEIVED</Text>
+      </View>
 
       {telegrams.length === 0 ? (
-        <View style={[shared.card, { alignItems: 'center', paddingVertical: 32 }]}>
-          <Text style={shared.textSecondary}>Nobody has reached this device yet. Start the relay and wait for another Replica phone.</Text>
+        <View style={[shared.card, { alignItems: 'center', paddingVertical: 40, gap: 12 }]}>
+          <Text style={{ fontFamily: F.extrabold, fontSize: 40, color: C.cardBorder }}>...</Text>
+          <Text style={[shared.text, { textAlign: 'center' }]}>No telegrams received yet</Text>
+          <Text style={[shared.textSecondary, { textAlign: 'center' }]}>When another Replica device connects, their emergency card will appear here automatically.</Text>
         </View>
       ) : null}
 
       {telegrams.map((entry) => {
         const { telegram, receivedFrom } = entry;
-        const avatarLabel = telegram.vital?.name
-          ? initials(telegram.vital.name)
-          : initials(telegram.user_id);
+        const v = telegram.vital;
+        const name = v?.name || 'Person ' + telegram.user_id.slice(0, 6);
+        const avatarLabel = v?.name ? initials(v.name) : telegram.user_id.slice(0, 2).toUpperCase();
         const statusC = statusColor(telegram.status);
-        const locationText = telegram.location
-          ? `${telegram.location.lat.toFixed(4)}, ${telegram.location.lng.toFixed(4)}`
-          : 'Position unavailable';
-        const timeText = new Date(telegram.timestamp * 1000).toLocaleTimeString();
+        const timeText = new Date(telegram.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const bloodText = v?.blood || null;
+        const severityDots = Array.from({ length: 5 }, (_, i) => i < telegram.severity);
 
         return (
           <Pressable
             key={telegram.id}
-            style={[shared.card, { borderLeftWidth: 3, borderLeftColor: statusC, gap: 10 }]}
-            onPress={() => { setSelected(entry); setShowCoordinates(false); }}
+            style={[shared.card, { borderLeftWidth: 4, borderLeftColor: statusC, gap: 12 }]}
+            onPress={() => setSelected(entry)}
           >
+            {/* Top row: avatar + name + status */}
             <View style={s.telegramCardRow}>
-              <View style={shared.avatar}>
-                <Text style={shared.avatarText}>{avatarLabel}</Text>
+              <View style={[shared.avatar, { backgroundColor: statusC + '22', borderWidth: 1, borderColor: statusC + '44' }]}>
+                <Text style={[shared.avatarText, { color: statusC }]}>{avatarLabel}</Text>
               </View>
               <View style={{ flex: 1, gap: 4 }}>
                 <View style={s.telegramCardNameRow}>
-                  <Text style={s.telegramName}>{telegram.vital?.name ?? telegram.user_id}</Text>
+                  <Text style={s.telegramName} numberOfLines={1}>{name}</Text>
                   <StatusBadge status={telegram.status} />
                 </View>
-                <Text style={shared.textSecondary}>
-                  {locationText} · {timeText}
-                </Text>
-                <Text style={{ color: C.textMuted, fontSize: 12 }}>
-                  Telegram stored locally · relayed by {receivedFrom}
-                </Text>
+                <Text style={shared.textSecondary}>{timeText} · via {receivedFrom ?? 'relay'}</Text>
+              </View>
+            </View>
+
+            {/* Quick info chips */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {bloodText ? (
+                <View style={ix.chip}><Text style={ix.chipText}>Blood: {bloodText}</Text></View>
+              ) : null}
+              {v?.allergies && v.allergies.length > 0 && v.allergies[0] !== 'none' ? (
+                <View style={[ix.chip, ix.chipWarning]}><Text style={ix.chipText}>Allergies: {v.allergies.join(', ')}</Text></View>
+              ) : null}
+              {v?.disability && v.disability !== 'NONE' ? (
+                <View style={[ix.chip, ix.chipWarning]}><Text style={ix.chipText}>{enumLabel(v.disability)}</Text></View>
+              ) : null}
+              {v?.pregnant ? (
+                <View style={[ix.chip, ix.chipWarning]}><Text style={ix.chipText}>Pregnant</Text></View>
+              ) : null}
+              {telegram.location ? (
+                <View style={ix.chip}><Text style={ix.chipText}>{telegram.location.lat.toFixed(3)}, {telegram.location.lng.toFixed(3)}</Text></View>
+              ) : null}
+            </View>
+
+            {/* Severity dots */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={[shared.label, { fontSize: 10 }]}>SEVERITY</Text>
+              <View style={{ flexDirection: 'row', gap: 3 }}>
+                {severityDots.map((filled, i) => (
+                  <View key={i} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: filled ? statusC : C.cardBorder }} />
+                ))}
               </View>
             </View>
           </Pressable>
         );
       })}
 
-      <Modal
-        transparent
-        visible={selected !== null}
-        onRequestClose={() => setSelected(null)}
-      >
+      {/* Detail modal */}
+      <Modal transparent visible={selected !== null} animationType="slide" onRequestClose={() => setSelected(null)}>
         <View style={shared.modalBackdrop}>
-          <ScrollView contentContainerStyle={shared.modalCard}>
-            {selected ? (
-              <>
-                <Text style={shared.heading}>Inbound triage</Text>
-                <Text style={shared.text}>
-                  {selected.telegram.vital?.name ?? selected.telegram.user_id} · {selected.telegram.status}
-                </Text>
-                <Text style={shared.textSecondary}>Clinical priority: {selected.telegram.severity}/5</Text>
-                <Text style={shared.textSecondary}>
-                  Event: {selected.telegram.event} / {selected.telegram.event_id}
-                </Text>
-                <Text style={shared.textSecondary}>
-                  Sender: {selected.receivedFrom ?? 'unknown'} · origin {selected.telegram.origin}
-                </Text>
-                <Text style={shared.textSecondary}>
-                  Received telegram: {new Date(selected.telegram.timestamp * 1000).toLocaleString()} · hops {selected.telegram.hop} · TTL {selected.telegram.ttl}
-                </Text>
-                <View style={shared.divider} />
-                <Text style={shared.textSecondary}>Blood: {selected.telegram.vital?.blood ?? 'unknown'}</Text>
-                <Text style={shared.textSecondary}>
-                  Allergies: {selected.telegram.vital?.allergies.join(', ') || 'none reported'}
-                </Text>
-                <Text style={shared.textSecondary}>
-                  Conditions: {selected.telegram.vital?.conditions.join(', ') || 'none reported'}
-                </Text>
-                <Text style={shared.textSecondary}>
-                  Medication: {selected.telegram.vital?.medications.join(', ') || 'none reported'}
-                </Text>
-                <Text style={shared.textSecondary}>
-                  Disability: {selected.telegram.vital?.disability ?? 'unknown'} · pregnant: {String(selected.telegram.vital?.pregnant ?? false)}
-                </Text>
-                <Action
-                  label={showCoordinates ? 'Hide exact coordinates' : 'Reveal exact coordinates deliberately'}
-                  onPress={() => setShowCoordinates(!showCoordinates)}
-                  secondary
-                />
-                {showCoordinates ? (
-                  <Text style={shared.textSecondary}>
-                    {selected.telegram.location
-                      ? `Coordinates ${selected.telegram.location.lat.toFixed(5)}, ${selected.telegram.location.lng.toFixed(5)}`
-                      : 'Position unavailable'}
-                  </Text>
-                ) : null}
-                {selected.receivedFrom && selected.telegram.verify ? (
-                  <>
-                    <Text style={shared.textSecondary}>
-                      SAFE verification question ID: {selected.telegram.verify.question_id}
-                    </Text>
-                    <Field
-                      label="Nearby person's answer"
-                      value={answer}
-                      secureTextEntry
-                      onChangeText={setAnswer}
-                    />
-                    <Action label="Send signed SAFE response" onPress={() => void safe()} />
-                  </>
-                ) : null}
-                <Action label="Close" onPress={() => setSelected(null)} secondary />
-              </>
-            ) : null}
+          <ScrollView contentContainerStyle={[shared.modalCard, { gap: 12 }]}>
+            {selected ? <TelegramDetail entry={selected} answer={answer} setAnswer={setAnswer} onSafe={() => void safe()} onClose={() => setSelected(null)} /> : null}
           </ScrollView>
         </View>
       </Modal>
     </ScrollView>
+  );
+}
+
+function TelegramDetail({ entry, answer, setAnswer, onSafe, onClose }: { entry: LedgerEntry; answer: string; setAnswer: (v: string) => void; onSafe: () => void; onClose: () => void }) {
+  const { telegram } = entry;
+  const v = telegram.vital;
+  const name = v?.name || 'Person ' + telegram.user_id.slice(0, 6);
+  const statusC = statusColor(telegram.status);
+
+  return (
+    <>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={[shared.avatar, { width: 52, height: 52, borderRadius: 14, backgroundColor: statusC + '22', borderWidth: 1, borderColor: statusC + '44' }]}>
+          <Text style={[shared.avatarText, { color: statusC, fontSize: 18 }]}>{v?.name ? initials(v.name) : telegram.user_id.slice(0, 2).toUpperCase()}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={shared.heading}>{name}</Text>
+          <StatusBadge status={telegram.status} />
+        </View>
+      </View>
+
+      {/* Event info */}
+      <View style={[shared.card, { backgroundColor: C.bg }]}>
+        <Text style={shared.label}>Event</Text>
+        <Text style={shared.text}>{telegram.event} — {telegram.event_id}</Text>
+        <Text style={shared.textSecondary}>
+          {new Date(telegram.timestamp * 1000).toLocaleString()} · Severity {telegram.severity}/5 · Hop {telegram.hop}
+        </Text>
+      </View>
+
+      {/* Medical info */}
+      <View style={[shared.card, { backgroundColor: C.bg }]}>
+        <Text style={shared.label}>Medical profile</Text>
+        <View style={{ gap: 6, marginTop: 4 }}>
+          <DetailRow label="Blood type" value={v?.blood} />
+          <DetailRow label="Age" value={v?.age != null ? `${v.age} years` : null} />
+          <DetailRow label="Allergies" value={v?.allergies && v.allergies.length > 0 ? v.allergies.join(', ') : null} />
+          <DetailRow label="Conditions" value={v?.conditions && v.conditions.length > 0 ? v.conditions.join(', ') : null} />
+          <DetailRow label="Medications" value={v?.medications && v.medications.length > 0 ? v.medications.join(', ') : null} />
+          <DetailRow label="Disability" value={v?.disability && v.disability !== 'NONE' ? enumLabel(v.disability) : 'None'} />
+          <DetailRow label="Pregnant" value={v?.pregnant ? 'Yes' : 'No'} />
+        </View>
+      </View>
+
+      {/* Location */}
+      <View style={[shared.card, { backgroundColor: C.bg }]}>
+        <Text style={shared.label}>Location</Text>
+        <Text style={shared.text}>
+          {telegram.location ? `${telegram.location.lat.toFixed(5)}, ${telegram.location.lng.toFixed(5)}` : 'Position not available'}
+        </Text>
+        <Text style={shared.textSecondary}>Origin: {telegram.origin} · Relayed by: {entry.receivedFrom ?? 'direct'}</Text>
+      </View>
+
+      {/* SAFE verification */}
+      {entry.receivedFrom && telegram.verify ? (
+        <View style={[shared.card, { backgroundColor: C.bg, borderColor: C.accent, borderWidth: 1 }]}>
+          <Text style={[shared.label, { color: C.accent }]}>SAFE verification</Text>
+          <Text style={shared.textSecondary}>Question ID: {telegram.verify.question_id}</Text>
+          <Field label="Answer from nearby person" value={answer} secureTextEntry onChangeText={setAnswer} />
+          <Action label="Send signed SAFE response" onPress={onSafe} />
+        </View>
+      ) : null}
+
+      <Action label="Close" onPress={onClose} secondary />
+    </>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Text style={shared.textSecondary}>{label}</Text>
+      <Text style={[shared.text, { fontSize: 13 }]}>{value || 'Not available'}</Text>
+    </View>
   );
 }
 
@@ -1192,6 +1235,26 @@ const s = StyleSheet.create({
     color: C.text,
     fontSize: 16,
     flex: 1,
+  },
+});
+
+const ix = StyleSheet.create({
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: C.elevated,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+  },
+  chipWarning: {
+    borderColor: C.emergency + '66',
+    backgroundColor: C.emergency + '11',
+  },
+  chipText: {
+    fontFamily: F.medium,
+    color: C.textSecondary,
+    fontSize: 11,
   },
 });
 
